@@ -38,7 +38,7 @@ FlKeyChannelResponder* fl_key_channel_responder_new(
 
 /**
  * fl_key_channel_responder_handle_event:
- * @responder: the #FlKeyChannelResponder self.
+ * @responder: an #FlKeyChannelResponder.
  * @event: the event to be handled. Must not be null. The object is managed by
  * callee and must not be assumed available after this function.
  * @specified_logical_key:

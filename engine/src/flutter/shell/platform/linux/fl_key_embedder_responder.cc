@@ -73,55 +73,6 @@ static uint64_t to_lower(uint64_t n) {
   return n;
 }
 
-/**
- * FlKeyEmbedderUserData:
- * The user_data used when #FlKeyEmbedderResponder sends message through the
- * embedder.SendKeyEvent API.
- */
-G_DECLARE_FINAL_TYPE(FlKeyEmbedderUserData,
-                     fl_key_embedder_user_data,
-                     FL,
-                     KEY_EMBEDDER_USER_DATA,
-                     GObject);
-
-struct _FlKeyEmbedderUserData {
-  GObject parent_instance;
-
-  FlKeyEmbedderResponderAsyncCallback callback;
-  gpointer user_data;
-};
-
-G_DEFINE_TYPE(FlKeyEmbedderUserData, fl_key_embedder_user_data, G_TYPE_OBJECT)
-
-static void fl_key_embedder_user_data_dispose(GObject* object);
-
-static void fl_key_embedder_user_data_class_init(
-    FlKeyEmbedderUserDataClass* klass) {
-  G_OBJECT_CLASS(klass)->dispose = fl_key_embedder_user_data_dispose;
-}
-
-static void fl_key_embedder_user_data_init(FlKeyEmbedderUserData* self) {}
-
-static void fl_key_embedder_user_data_dispose(GObject* object) {
-  // The following line suppresses a warning for unused function
-  // FL_IS_KEY_EMBEDDER_USER_DATA.
-  g_return_if_fail(FL_IS_KEY_EMBEDDER_USER_DATA(object));
-}
-
-// Creates a new FlKeyChannelUserData private class with all information.
-//
-// The callback and the user_data might be nullptr.
-static FlKeyEmbedderUserData* fl_key_embedder_user_data_new(
-    FlKeyEmbedderResponderAsyncCallback callback,
-    gpointer user_data) {
-  FlKeyEmbedderUserData* self = FL_KEY_EMBEDDER_USER_DATA(
-      g_object_new(fl_key_embedder_user_data_get_type(), nullptr));
-
-  self->callback = callback;
-  self->user_data = user_data;
-  return self;
-}
-
 namespace {
 
 typedef enum {
@@ -164,10 +115,6 @@ struct _FlKeyEmbedderResponder {
   //
   // For more information, see #update_caps_lock_state_logic_inferrence.
   StateLogicInferrence caps_lock_state_logic_inferrence;
-
-  // Record if any events has been sent during a
-  // |fl_key_embedder_responder_handle_event| call.
-  bool sent_any_events;
 
   // A static map from GTK modifier bits to #FlKeyEmbedderCheckedKey to
   // configure the modifier keys that needs to be tracked and kept synchronous
@@ -314,11 +261,11 @@ static char* event_to_character(FlKeyEvent* event) {
 // Handles a response from the embedder API to a key event sent to the framework
 // earlier.
 static void handle_response(bool handled, gpointer user_data) {
-  g_autoptr(FlKeyEmbedderUserData) data = FL_KEY_EMBEDDER_USER_DATA(user_data);
+  g_autoptr(GTask) task = G_TASK(user_data);
 
-  g_return_if_fail(data->callback != nullptr);
-
-  data->callback(handled, data->user_data);
+  gboolean* return_value = g_new0(gboolean, 1);
+  *return_value = handled;
+  g_task_return_pointer(task, return_value, g_free);
 }
 
 // Sends a synthesized event to the framework with no demand for callback.
@@ -335,7 +282,6 @@ static void synthesize_simple_event(FlKeyEmbedderResponder* self,
   out_event.logical = logical;
   out_event.character = nullptr;
   out_event.synthesized = true;
-  self->sent_any_events = true;
   self->send_key_event(&out_event, nullptr, nullptr,
                        self->send_key_event_user_data);
 }
@@ -746,16 +692,13 @@ static uint64_t corrected_modifier_physical_key(
   return logical_to_physical_context.corrected_physical_key;
 }
 
-static void fl_key_embedder_responder_handle_event_impl(
-    FlKeyEmbedderResponder* responder,
-    FlKeyEvent* event,
-    uint64_t specified_logical_key,
-    FlKeyEmbedderResponderAsyncCallback callback,
-    gpointer user_data) {
-  FlKeyEmbedderResponder* self = FL_KEY_EMBEDDER_RESPONDER(responder);
-
-  g_return_if_fail(event != nullptr);
-  g_return_if_fail(callback != nullptr);
+void fl_key_embedder_responder_handle_event(FlKeyEmbedderResponder* self,
+                                            FlKeyEvent* event,
+                                            uint64_t specified_logical_key,
+                                            GCancellable* cancellable,
+                                            GAsyncReadyCallback callback,
+                                            gpointer user_data) {
+  g_autoptr(GTask) task = g_task_new(self, cancellable, callback, user_data);
 
   const uint64_t logical_key = specified_logical_key != 0
                                    ? specified_logical_key
@@ -811,7 +754,12 @@ static void fl_key_embedder_responder_handle_event_impl(
       // The physical key has been released before. It might indicate a missed
       // event due to loss of focus, or multiple keyboards pressed keys with the
       // same physical key. Ignore the up event.
-      callback(true, user_data);
+      gboolean* return_value = g_new0(gboolean, 1);
+      *return_value = TRUE;
+      g_task_return_pointer(task, return_value, g_free);
+
+      self->send_key_event(&kEmptyEvent, nullptr, nullptr,
+                           self->send_key_event_user_data);
       return;
     } else {
       out_event.type = kFlutterKeyEventTypeUp;
@@ -825,26 +773,25 @@ static void fl_key_embedder_responder_handle_event_impl(
   if (is_down_event) {
     update_mapping_record(self, physical_key, logical_key);
   }
-  FlKeyEmbedderUserData* response_data =
-      fl_key_embedder_user_data_new(callback, user_data);
-  self->sent_any_events = true;
-  self->send_key_event(&out_event, handle_response, response_data,
+  self->send_key_event(&out_event, handle_response, g_steal_pointer(&task),
                        self->send_key_event_user_data);
 }
 
-void fl_key_embedder_responder_handle_event(
+gboolean fl_key_embedder_responder_handle_event_finish(
     FlKeyEmbedderResponder* self,
-    FlKeyEvent* event,
-    uint64_t specified_logical_key,
-    FlKeyEmbedderResponderAsyncCallback callback,
-    gpointer user_data) {
-  self->sent_any_events = false;
-  fl_key_embedder_responder_handle_event_impl(
-      self, event, specified_logical_key, callback, user_data);
-  if (!self->sent_any_events) {
-    self->send_key_event(&kEmptyEvent, nullptr, nullptr,
-                         self->send_key_event_user_data);
+    GAsyncResult* result,
+    gboolean* handled,
+    GError** error) {
+  g_return_val_if_fail(g_task_is_valid(result, self), FALSE);
+
+  g_autofree gboolean* return_value =
+      static_cast<gboolean*>(g_task_propagate_pointer(G_TASK(result), error));
+  if (return_value == nullptr) {
+    return FALSE;
   }
+
+  *handled = *return_value;
+  return TRUE;
 }
 
 void fl_key_embedder_responder_sync_modifiers_if_needed(

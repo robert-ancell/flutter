@@ -98,18 +98,11 @@ static FlKeyEmbedderCallRecord* fl_key_embedder_call_record_new(
 }
 
 static gboolean g_expected_handled;
-static gpointer g_expected_user_data;
-
-static void verify_response_handled(bool handled, gpointer user_data) {
-  EXPECT_EQ(handled, g_expected_handled);
-}
 
 static void invoke_record_callback_and_verify(FlKeyEmbedderCallRecord* record,
-                                              bool expected_handled,
-                                              void* expected_user_data) {
+                                              bool expected_handled) {
   g_return_if_fail(record->callback != nullptr);
   g_expected_handled = expected_handled;
-  g_expected_user_data = expected_user_data;
   record->callback(expected_handled, record->user_data);
 }
 
@@ -131,15 +124,21 @@ TEST(FlKeyEmbedderResponderTest, SendKeyEvent) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // On a QWERTY keyboard, press key Q (physically key A), and release.
   // Key down
   g_autoptr(FlKeyEvent) event1 =
       fl_key_event_new(12345, kPress, kKeyCodeKeyA, GDK_KEY_a,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   FlKeyEmbedderCallRecord* record =
@@ -152,15 +151,22 @@ TEST(FlKeyEmbedderResponderTest, SendKeyEvent) {
   EXPECT_STREQ(record->event->character, "a");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Key up
   g_autoptr(FlKeyEvent) event2 =
       fl_key_event_new(12346, kRelease, kKeyCodeKeyA, GDK_KEY_a,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -172,7 +178,7 @@ TEST(FlKeyEmbedderResponderTest, SendKeyEvent) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, FALSE, &user_data);
+  invoke_record_callback_and_verify(record, FALSE);
   clear_records(call_records);
 
   // On an AZERTY keyboard, press key Q (physically key A), and release.
@@ -180,8 +186,15 @@ TEST(FlKeyEmbedderResponderTest, SendKeyEvent) {
   g_autoptr(FlKeyEvent) event3 =
       fl_key_event_new(12347, kPress, kKeyCodeKeyA, GDK_KEY_q,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -193,15 +206,22 @@ TEST(FlKeyEmbedderResponderTest, SendKeyEvent) {
   EXPECT_STREQ(record->event->character, "q");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Key up
   g_autoptr(FlKeyEvent) event4 =
       fl_key_event_new(12348, kRelease, kKeyCodeKeyA, GDK_KEY_q,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event4, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event4, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -213,7 +233,7 @@ TEST(FlKeyEmbedderResponderTest, SendKeyEvent) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, FALSE, &user_data);
+  invoke_record_callback_and_verify(record, FALSE);
 }
 
 // Basic key presses, but uses the specified logical key if it is not 0.
@@ -222,15 +242,21 @@ TEST(FlKeyEmbedderResponderTest, UsesSpecifiedLogicalKey) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // On an AZERTY keyboard, press physical key 1, and release.
   // Key down
   g_autoptr(FlKeyEvent) event =
       fl_key_event_new(12345, kPress, kKeyCodeDigit1, GDK_KEY_ampersand,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event, kLogicalDigit1,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event, kLogicalDigit1, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   FlKeyEmbedderCallRecord* record =
@@ -243,7 +269,7 @@ TEST(FlKeyEmbedderResponderTest, UsesSpecifiedLogicalKey) {
   EXPECT_STREQ(record->event->character, "&");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 // Press Shift, key A, then release Shift, key A.
@@ -252,14 +278,20 @@ TEST(FlKeyEmbedderResponderTest, PressShiftDuringLetterKeyTap) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // Press shift right
   g_autoptr(FlKeyEvent) event1 =
       fl_key_event_new(101, kPress, kKeyCodeShiftRight, GDK_KEY_Shift_R,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   FlKeyEmbedderCallRecord* record =
@@ -270,14 +302,21 @@ TEST(FlKeyEmbedderResponderTest, PressShiftDuringLetterKeyTap) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press key A
   g_autoptr(FlKeyEvent) event2 =
       fl_key_event_new(102, kPress, kKeyCodeKeyA, GDK_KEY_A, GDK_SHIFT_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -287,14 +326,21 @@ TEST(FlKeyEmbedderResponderTest, PressShiftDuringLetterKeyTap) {
   EXPECT_STREQ(record->event->character, "A");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release shift right
   g_autoptr(FlKeyEvent) event3 = fl_key_event_new(
       103, kRelease, kKeyCodeShiftRight, GDK_KEY_Shift_R, GDK_SHIFT_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -304,15 +350,22 @@ TEST(FlKeyEmbedderResponderTest, PressShiftDuringLetterKeyTap) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release key A
   g_autoptr(FlKeyEvent) event4 =
       fl_key_event_new(104, kRelease, kKeyCodeKeyA, GDK_KEY_A,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event4, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event4, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -322,7 +375,7 @@ TEST(FlKeyEmbedderResponderTest, PressShiftDuringLetterKeyTap) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 // Press or release Numpad 1 between presses/releases of NumLock.
@@ -338,14 +391,20 @@ TEST(FlKeyEmbedderResponderTest, TapNumPadKeysBetweenNumLockEvents) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // Press Numpad 1 (stage 0)
   g_autoptr(FlKeyEvent) event1 =
       fl_key_event_new(101, kPress, kKeyCodeNumpad1, GDK_KEY_KP_End,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   FlKeyEmbedderCallRecord* record =
@@ -356,15 +415,22 @@ TEST(FlKeyEmbedderResponderTest, TapNumPadKeysBetweenNumLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);  // TODO(chrome-bot):
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press NumLock (stage 0 -> 1)
   g_autoptr(FlKeyEvent) event2 =
       fl_key_event_new(102, kPress, kKeyCodeNumLock, GDK_KEY_Num_Lock,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -374,14 +440,21 @@ TEST(FlKeyEmbedderResponderTest, TapNumPadKeysBetweenNumLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release numpad 1 (stage 1)
   g_autoptr(FlKeyEvent) event3 = fl_key_event_new(
       104, kRelease, kKeyCodeNumpad1, GDK_KEY_KP_1, GDK_MOD2_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -391,14 +464,21 @@ TEST(FlKeyEmbedderResponderTest, TapNumPadKeysBetweenNumLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release NumLock (stage 1 -> 2)
   g_autoptr(FlKeyEvent) event4 = fl_key_event_new(
       103, kRelease, kKeyCodeNumLock, GDK_KEY_Num_Lock, GDK_MOD2_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event4, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event4, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -408,14 +488,21 @@ TEST(FlKeyEmbedderResponderTest, TapNumPadKeysBetweenNumLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press Numpad 1 (stage 2)
   g_autoptr(FlKeyEvent) event5 = fl_key_event_new(
       101, kPress, kKeyCodeNumpad1, GDK_KEY_KP_End, GDK_MOD2_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event5, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event5, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -425,14 +512,21 @@ TEST(FlKeyEmbedderResponderTest, TapNumPadKeysBetweenNumLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);  // TODO(chrome-bot):
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press NumLock (stage 2 -> 3)
   g_autoptr(FlKeyEvent) event6 = fl_key_event_new(
       102, kPress, kKeyCodeNumLock, GDK_KEY_Num_Lock, GDK_MOD2_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event6, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event6, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -442,14 +536,21 @@ TEST(FlKeyEmbedderResponderTest, TapNumPadKeysBetweenNumLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release numpad 1 (stage 3)
   g_autoptr(FlKeyEvent) event7 = fl_key_event_new(
       104, kRelease, kKeyCodeNumpad1, GDK_KEY_KP_1, GDK_MOD2_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event7, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event7, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -459,14 +560,21 @@ TEST(FlKeyEmbedderResponderTest, TapNumPadKeysBetweenNumLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release NumLock (stage 3 -> 0)
   g_autoptr(FlKeyEvent) event8 = fl_key_event_new(
       103, kRelease, kKeyCodeNumLock, GDK_KEY_Num_Lock, GDK_MOD2_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event8, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event8, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -476,7 +584,7 @@ TEST(FlKeyEmbedderResponderTest, TapNumPadKeysBetweenNumLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 // Press or release digit 1 between presses/releases of Shift.
@@ -488,15 +596,21 @@ TEST(FlKeyEmbedderResponderTest, ReleaseShiftKeyBetweenDigitKeyEvents) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   GdkModifierType state = static_cast<GdkModifierType>(0);
 
   // Press shift left
   g_autoptr(FlKeyEvent) event1 = fl_key_event_new(
       101, kPress, kKeyCodeShiftLeft, GDK_KEY_Shift_L, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   FlKeyEmbedderCallRecord* record =
@@ -507,7 +621,7 @@ TEST(FlKeyEmbedderResponderTest, ReleaseShiftKeyBetweenDigitKeyEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   state = GDK_SHIFT_MASK;
@@ -515,8 +629,15 @@ TEST(FlKeyEmbedderResponderTest, ReleaseShiftKeyBetweenDigitKeyEvents) {
   // Press digit 1, which is '!' on a US keyboard
   g_autoptr(FlKeyEvent) event2 =
       fl_key_event_new(102, kPress, kKeyCodeDigit1, GDK_KEY_exclam, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -526,14 +647,21 @@ TEST(FlKeyEmbedderResponderTest, ReleaseShiftKeyBetweenDigitKeyEvents) {
   EXPECT_STREQ(record->event->character, "!");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release shift
   g_autoptr(FlKeyEvent) event3 = fl_key_event_new(
       103, kRelease, kKeyCodeShiftLeft, GDK_KEY_Shift_L, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -543,7 +671,7 @@ TEST(FlKeyEmbedderResponderTest, ReleaseShiftKeyBetweenDigitKeyEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   state = static_cast<GdkModifierType>(0);
@@ -551,8 +679,15 @@ TEST(FlKeyEmbedderResponderTest, ReleaseShiftKeyBetweenDigitKeyEvents) {
   // Release digit 1, which is "1" because shift has been released.
   g_autoptr(FlKeyEvent) event4 =
       fl_key_event_new(104, kRelease, kKeyCodeDigit1, GDK_KEY_1, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event4, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event4, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -562,7 +697,7 @@ TEST(FlKeyEmbedderResponderTest, ReleaseShiftKeyBetweenDigitKeyEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 // Press or release letter key between presses/releases of CapsLock.
@@ -574,14 +709,20 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEvents) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // Press CapsLock (stage 0 -> 1)
   g_autoptr(FlKeyEvent) event1 =
       fl_key_event_new(101, kPress, kKeyCodeCapsLock, GDK_KEY_Caps_Lock,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   FlKeyEmbedderCallRecord* record =
@@ -592,14 +733,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press key A (stage 1)
   g_autoptr(FlKeyEvent) event2 =
       fl_key_event_new(102, kPress, kKeyCodeKeyA, GDK_KEY_A, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -609,14 +757,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEvents) {
   EXPECT_STREQ(record->event->character, "A");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release CapsLock (stage 1 -> 2)
   g_autoptr(FlKeyEvent) event3 = fl_key_event_new(
       103, kRelease, kKeyCodeCapsLock, GDK_KEY_Caps_Lock, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -626,14 +781,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release key A (stage 2)
   g_autoptr(FlKeyEvent) event4 = fl_key_event_new(104, kRelease, kKeyCodeKeyA,
                                                   GDK_KEY_A, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event4, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event4, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -643,14 +805,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press CapsLock (stage 2 -> 3)
   g_autoptr(FlKeyEvent) event5 = fl_key_event_new(
       105, kPress, kKeyCodeCapsLock, GDK_KEY_Caps_Lock, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event5, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event5, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -660,14 +829,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press key A (stage 3)
   g_autoptr(FlKeyEvent) event6 =
       fl_key_event_new(106, kPress, kKeyCodeKeyA, GDK_KEY_A, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event6, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event6, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -677,14 +853,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEvents) {
   EXPECT_STREQ(record->event->character, "A");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release CapsLock (stage 3 -> 0)
   g_autoptr(FlKeyEvent) event7 = fl_key_event_new(
       107, kRelease, kKeyCodeCapsLock, GDK_KEY_Caps_Lock, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event7, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event7, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -694,15 +877,22 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release key A (stage 0)
   g_autoptr(FlKeyEvent) event8 =
       fl_key_event_new(108, kRelease, kKeyCodeKeyA, GDK_KEY_a,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event8, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event8, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -712,7 +902,7 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 // Press or release letter key between presses/releases of CapsLock, on
@@ -724,13 +914,19 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEventsReversed) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // Press key A (stage 0)
   g_autoptr(FlKeyEvent) event1 = fl_key_event_new(
       101, kPress, kKeyCodeKeyA, GDK_KEY_a, static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   FlKeyEmbedderCallRecord* record =
@@ -741,14 +937,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEventsReversed) {
   EXPECT_STREQ(record->event->character, "a");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press CapsLock (stage 0 -> 1)
   g_autoptr(FlKeyEvent) event2 = fl_key_event_new(
       102, kPress, kKeyCodeCapsLock, GDK_KEY_Caps_Lock, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -758,14 +961,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEventsReversed) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release CapsLock (stage 1 -> 2)
   g_autoptr(FlKeyEvent) event3 = fl_key_event_new(
       103, kRelease, kKeyCodeCapsLock, GDK_KEY_Caps_Lock, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -775,14 +985,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEventsReversed) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release key A (stage 2)
   g_autoptr(FlKeyEvent) event4 = fl_key_event_new(104, kRelease, kKeyCodeKeyA,
                                                   GDK_KEY_A, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event4, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event4, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -792,14 +1009,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEventsReversed) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press key A (stage 2)
   g_autoptr(FlKeyEvent) event5 =
       fl_key_event_new(105, kPress, kKeyCodeKeyA, GDK_KEY_A, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event5, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event5, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -809,15 +1033,22 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEventsReversed) {
   EXPECT_STREQ(record->event->character, "A");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Press CapsLock (stage 2 -> 3)
   g_autoptr(FlKeyEvent) event6 =
       fl_key_event_new(106, kPress, kKeyCodeCapsLock, GDK_KEY_Caps_Lock,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event6, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event6, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -827,14 +1058,21 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEventsReversed) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release CapsLock (stage 3 -> 0)
   g_autoptr(FlKeyEvent) event7 = fl_key_event_new(
       107, kRelease, kKeyCodeCapsLock, GDK_KEY_Caps_Lock, GDK_LOCK_MASK, 0);
-  fl_key_embedder_responder_handle_event(responder, event7, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event7, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -844,15 +1082,22 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEventsReversed) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release key A (stage 0)
   g_autoptr(FlKeyEvent) event8 =
       fl_key_event_new(108, kRelease, kKeyCodeKeyA, GDK_KEY_a,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event8, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event8, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -862,7 +1107,7 @@ TEST(FlKeyEmbedderResponderTest, TapLetterKeysBetweenCapsLockEventsReversed) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 TEST(FlKeyEmbedderResponderTest, TurnDuplicateDownEventsToRepeats) {
@@ -870,27 +1115,40 @@ TEST(FlKeyEmbedderResponderTest, TurnDuplicateDownEventsToRepeats) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // Press KeyA
   g_autoptr(FlKeyEvent) event1 = fl_key_event_new(
       101, kPress, kKeyCodeKeyA, GDK_KEY_a, static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
 
   FlKeyEmbedderCallRecord* record =
       FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Another KeyA down events, which usually means a repeated event.
   g_expected_handled = false;
   g_autoptr(FlKeyEvent) event2 = fl_key_event_new(
       102, kPress, kKeyCodeKeyA, GDK_KEY_a, static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
 
@@ -902,19 +1160,26 @@ TEST(FlKeyEmbedderResponderTest, TurnDuplicateDownEventsToRepeats) {
   EXPECT_EQ(record->event->synthesized, false);
   EXPECT_NE(record->callback, nullptr);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release KeyA
   g_autoptr(FlKeyEvent) event3 =
       fl_key_event_new(103, kRelease, kKeyCodeKeyA, GDK_KEY_q,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 TEST(FlKeyEmbedderResponderTest, IgnoreAbruptUpEvent) {
@@ -922,15 +1187,21 @@ TEST(FlKeyEmbedderResponderTest, IgnoreAbruptUpEvent) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // Release KeyA before it was even pressed.
   g_expected_handled = true;  // The empty event is always handled.
   g_autoptr(FlKeyEvent) event =
       fl_key_event_new(103, kRelease, kKeyCodeKeyA, GDK_KEY_q,
                        static_cast<GdkModifierType>(0), 0);
-  fl_key_embedder_responder_handle_event(responder, event, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
 
@@ -950,7 +1221,6 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncPressingStateOnSelfEvents) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // Test 1: synthesize key down.
 
@@ -960,8 +1230,15 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncPressingStateOnSelfEvents) {
   // Send a ControlLeft up
   g_autoptr(FlKeyEvent) event1 = fl_key_event_new(
       101, kRelease, kKeyCodeControlLeft, GDK_KEY_Control_L, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 2u);
   FlKeyEmbedderCallRecord* record =
@@ -981,7 +1258,7 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncPressingStateOnSelfEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Test 2: synthesize key up.
@@ -990,11 +1267,18 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncPressingStateOnSelfEvents) {
   state = static_cast<GdkModifierType>(0);
   g_autoptr(FlKeyEvent) event2 = fl_key_event_new(
       102, kPress, kKeyCodeControlLeft, GDK_KEY_Control_L, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // A key up of control left is missed.
@@ -1003,8 +1287,15 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncPressingStateOnSelfEvents) {
   // Send another ControlLeft down
   g_autoptr(FlKeyEvent) event3 = fl_key_event_new(
       103, kPress, kKeyCodeControlLeft, GDK_KEY_Control_L, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 2u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -1023,18 +1314,25 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncPressingStateOnSelfEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Send a ControlLeft up to clear up state.
   state = GDK_CONTROL_MASK;
   g_autoptr(FlKeyEvent) event4 = fl_key_event_new(
       104, kRelease, kKeyCodeControlLeft, GDK_KEY_Control_L, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event4, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event4, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Test 3: synthesize by right modifier.
@@ -1045,8 +1343,15 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncPressingStateOnSelfEvents) {
   // Send a ControlRight up.
   g_autoptr(FlKeyEvent) event5 = fl_key_event_new(
       105, kRelease, kKeyCodeControlRight, GDK_KEY_Control_R, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event5, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event5, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   // A ControlLeft down is synthesized, with an empty event.
   // Reason: The ControlLeft down is synthesized to synchronize the state
@@ -1070,7 +1375,6 @@ TEST(FlKeyEmbedderResponderTest,
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // A key down of control left is missed.
   GdkModifierType state = GDK_CONTROL_MASK;
@@ -1078,8 +1382,15 @@ TEST(FlKeyEmbedderResponderTest,
   // Send a normal event (KeyA down)
   g_autoptr(FlKeyEvent) event1 =
       fl_key_event_new(101, kPress, kKeyCodeKeyA, GDK_KEY_a, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 2u);
   FlKeyEmbedderCallRecord* record =
@@ -1099,7 +1410,7 @@ TEST(FlKeyEmbedderResponderTest,
   EXPECT_STREQ(record->event->character, "a");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // A key up of control left is missed.
@@ -1108,8 +1419,15 @@ TEST(FlKeyEmbedderResponderTest,
   // Send a normal event (KeyA up)
   g_autoptr(FlKeyEvent) event2 =
       fl_key_event_new(102, kRelease, kKeyCodeKeyA, GDK_KEY_A, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 2u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -1128,7 +1446,7 @@ TEST(FlKeyEmbedderResponderTest,
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Test non-default key mapping.
@@ -1138,8 +1456,15 @@ TEST(FlKeyEmbedderResponderTest,
 
   g_autoptr(FlKeyEvent) event3 = fl_key_event_new(101, kPress, kKeyCodeCapsLock,
                                                   GDK_KEY_Control_L, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -1150,7 +1475,7 @@ TEST(FlKeyEmbedderResponderTest,
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // The key up of the control left press is missed.
@@ -1159,8 +1484,15 @@ TEST(FlKeyEmbedderResponderTest,
   // Send a normal event (KeyA down).
   g_autoptr(FlKeyEvent) event4 =
       fl_key_event_new(102, kPress, kKeyCodeKeyA, GDK_KEY_A, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event4, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event4, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   // The synthesized event should have physical CapsLock and logical
   // ControlLeft.
@@ -1181,7 +1513,7 @@ TEST(FlKeyEmbedderResponderTest,
   EXPECT_STREQ(record->event->character, "A");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 // Test if missed modifier keys can be detected and synthesized with state
@@ -1192,15 +1524,21 @@ TEST(FlKeyEmbedderResponderTest,
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // Press a key with physical CapsLock and logical ControlLeft.
   GdkModifierType state = static_cast<GdkModifierType>(0);
 
   g_autoptr(FlKeyEvent) event1 = fl_key_event_new(101, kPress, kKeyCodeCapsLock,
                                                   GDK_KEY_Control_L, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   FlKeyEmbedderCallRecord* record =
@@ -1212,7 +1550,7 @@ TEST(FlKeyEmbedderResponderTest,
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // The key up of the control left press is missed.
@@ -1221,8 +1559,15 @@ TEST(FlKeyEmbedderResponderTest,
   // Send a normal event (KeyA down).
   g_autoptr(FlKeyEvent) event2 =
       fl_key_event_new(102, kPress, kKeyCodeKeyA, GDK_KEY_A, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   // The synthesized event should have physical CapsLock and logical
   // ControlLeft.
@@ -1243,7 +1588,7 @@ TEST(FlKeyEmbedderResponderTest,
   EXPECT_STREQ(record->event->character, "A");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 // Test if missed lock keys can be detected and synthesized with state
@@ -1253,7 +1598,6 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnNonSelfEvents) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // The NumLock is desynchronized by being enabled.
   GdkModifierType state = GDK_MOD2_MASK;
@@ -1261,8 +1605,15 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnNonSelfEvents) {
   // Send a normal event
   g_autoptr(FlKeyEvent) event1 =
       fl_key_event_new(101, kPress, kKeyCodeKeyA, GDK_KEY_a, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 2u);
   FlKeyEmbedderCallRecord* record =
@@ -1282,7 +1633,7 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnNonSelfEvents) {
   EXPECT_STREQ(record->event->character, "a");
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // The NumLock is desynchronized by being disabled.
@@ -1291,8 +1642,15 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnNonSelfEvents) {
   // Release key A
   g_autoptr(FlKeyEvent) event2 =
       fl_key_event_new(102, kRelease, kKeyCodeKeyA, GDK_KEY_A, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 4u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -1327,7 +1685,7 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnNonSelfEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // Release NumLock. Since the previous event should have synthesized NumLock
@@ -1335,8 +1693,15 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnNonSelfEvents) {
   g_expected_handled = true;
   g_autoptr(FlKeyEvent) event3 = fl_key_event_new(
       103, kRelease, kKeyCodeNumLock, GDK_KEY_Num_Lock, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event3, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event3, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 1u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -1354,7 +1719,6 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnSelfEvents) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // The NumLock is desynchronized by being enabled.
   GdkModifierType state = GDK_MOD2_MASK;
@@ -1362,8 +1726,15 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnSelfEvents) {
   // NumLock down
   g_autoptr(FlKeyEvent) event1 = fl_key_event_new(101, kPress, kKeyCodeNumLock,
                                                   GDK_KEY_Num_Lock, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event1, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event1, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 3u);
   FlKeyEmbedderCallRecord* record =
@@ -1391,7 +1762,7 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnSelfEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
   clear_records(call_records);
 
   // The NumLock is desynchronized by being enabled in a press event.
@@ -1400,8 +1771,15 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnSelfEvents) {
   // NumLock up
   g_autoptr(FlKeyEvent) event2 = fl_key_event_new(102, kPress, kKeyCodeNumLock,
                                                   GDK_KEY_Num_Lock, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event2, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event2, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 4u);
   record = FL_KEY_EMBEDDER_CALL_RECORD(g_ptr_array_index(call_records, 0));
@@ -1436,7 +1814,7 @@ TEST(FlKeyEmbedderResponderTest, SynthesizeForDesyncLockModeOnSelfEvents) {
   EXPECT_STREQ(record->event->character, nullptr);
   EXPECT_EQ(record->event->synthesized, false);
 
-  invoke_record_callback_and_verify(record, TRUE, &user_data);
+  invoke_record_callback_and_verify(record, TRUE);
 }
 
 // Ensures that even if the primary event is ignored (due to duplicate
@@ -1446,7 +1824,6 @@ TEST(FlKeyEmbedderResponderTest, SynthesizationOccursOnIgnoredEvents) {
       g_ptr_array_new_with_free_func(g_object_unref);
   g_autoptr(FlKeyEmbedderResponder) responder =
       fl_key_embedder_responder_new(record_calls, call_records);
-  int user_data = 123;  // Arbitrary user data
 
   // The NumLock is desynchronized by being enabled, and Control is pressed.
   GdkModifierType state =
@@ -1456,8 +1833,15 @@ TEST(FlKeyEmbedderResponderTest, SynthesizationOccursOnIgnoredEvents) {
   g_expected_handled = true;  // The ignored event is always handled.
   g_autoptr(FlKeyEvent) event =
       fl_key_event_new(101, kRelease, kKeyCodeKeyA, GDK_KEY_a, state, 0);
-  fl_key_embedder_responder_handle_event(responder, event, 0,
-                                         verify_response_handled, &user_data);
+  fl_key_embedder_responder_handle_event(
+      responder, event, 0, nullptr,
+      [](GObject* object, GAsyncResult* result, gpointer user_data) {
+        gboolean handled;
+        EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+            FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+        EXPECT_EQ(handled, g_expected_handled);
+      },
+      nullptr);
 
   EXPECT_EQ(call_records->len, 2u);
   FlKeyEmbedderCallRecord* record =
@@ -1501,11 +1885,17 @@ TEST(FlKeyEmbedderResponderTest, HandlesShiftAltVersusGroupNext) {
                                                guint16 keycode,
                                                GdkModifierType state) {
     now_time += 1;
-    int user_data = 123;  // Arbitrary user data
     g_autoptr(FlKeyEvent) event =
         fl_key_event_new(now_time, is_press, keycode, keyval, state, 0);
-    fl_key_embedder_responder_handle_event(responder, event, 0,
-                                           verify_response_handled, &user_data);
+    fl_key_embedder_responder_handle_event(
+        responder, event, 0, nullptr,
+        [](GObject* object, GAsyncResult* result, gpointer user_data) {
+          gboolean handled;
+          EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+              FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+          EXPECT_EQ(handled, g_expected_handled);
+        },
+        nullptr);
   };
 
   send_key_event(kPress, GDK_KEY_Shift_L, kKeyCodeShiftLeft,
@@ -1605,11 +1995,17 @@ TEST(FlKeyEmbedderResponderTest, HandlesShiftAltLeftIsMetaLeft) {
                                                guint16 keycode,
                                                GdkModifierType state) {
     now_time += 1;
-    int user_data = 123;  // Arbitrary user data
     g_autoptr(FlKeyEvent) event =
         fl_key_event_new(now_time, is_press, keycode, keyval, state, 0);
-    fl_key_embedder_responder_handle_event(responder, event, 0,
-                                           verify_response_handled, &user_data);
+    fl_key_embedder_responder_handle_event(
+        responder, event, 0, nullptr,
+        [](GObject* object, GAsyncResult* result, gpointer user_data) {
+          gboolean handled;
+          EXPECT_TRUE(fl_key_embedder_responder_handle_event_finish(
+              FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, nullptr));
+          EXPECT_EQ(handled, g_expected_handled);
+        },
+        nullptr);
   };
 
   // ShiftLeft + AltLeft

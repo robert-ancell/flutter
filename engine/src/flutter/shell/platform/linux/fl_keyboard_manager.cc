@@ -262,9 +262,20 @@ static void responder_handle_event_callback(FlKeyboardManager* self,
   }
 }
 
-static void responder_handle_embedder_event_callback(bool handled,
-                                                     gpointer user_data) {
+static void responder_handle_embedder_event_cb(GObject* object,
+                                               GAsyncResult* result,
+                                               gpointer user_data) {
   g_autoptr(FlKeyboardManagerData) data = FL_KEYBOARD_MANAGER_DATA(user_data);
+
+  g_autoptr(GError) error = nullptr;
+  gboolean handled;
+  if (!fl_key_embedder_responder_handle_event_finish(
+          FL_KEY_EMBEDDER_RESPONDER(object), result, &handled, &error)) {
+    if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+      g_warning("Failed to handle key event in embedder: %s", error->message);
+    }
+    return;
+  }
 
   fl_keyboard_pending_event_mark_embedder_replied(data->pending, handled);
 
@@ -541,7 +552,8 @@ gboolean fl_keyboard_manager_handle_event(FlKeyboardManager* self,
       fl_key_event_get_keycode(event));
   fl_key_embedder_responder_handle_event(
       self->key_embedder_responder, event, specified_logical_key,
-      responder_handle_embedder_event_callback, g_object_ref(data));
+      self->cancellable, responder_handle_embedder_event_cb,
+      g_object_ref(data));
   fl_key_channel_responder_handle_event(
       self->key_channel_responder, event, specified_logical_key,
       self->cancellable, responder_handle_channel_event_cb, g_object_ref(data));

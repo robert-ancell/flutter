@@ -12,6 +12,7 @@
 #include "flutter/shell/platform/embedder/embedder.h"
 #include "flutter/shell/platform/linux/fl_binary_messenger_private.h"
 #include "flutter/shell/platform/linux/fl_dart_project_private.h"
+#include "flutter/shell/platform/linux/fl_engine_display.h"
 #include "flutter/shell/platform/linux/fl_engine_private.h"
 #include "flutter/shell/platform/linux/fl_pixel_buffer_texture_private.h"
 #include "flutter/shell/platform/linux/fl_platform_handler.h"
@@ -878,6 +879,30 @@ GBytes* fl_engine_send_platform_message_finish(FlEngine* self,
   g_return_val_if_fail(g_task_is_valid(result, self), FALSE);
 
   return static_cast<GBytes*>(g_task_propagate_pointer(G_TASK(result), error));
+}
+
+void fl_engine_notify_display_update(FlEngine* self, GPtrArray* displays) {
+  g_return_if_fail(FL_IS_ENGINE(self));
+
+  if (self->engine == nullptr) {
+    return;
+  }
+
+  g_autofree FlutterEngineDisplay* d = static_cast<FlutterEngineDisplay*>(
+      g_new0(FlutterEngineDisplay, displays->len));
+  for (size_t i = 0; i < displays->len; i++) {
+    FlEngineDisplay* display =
+        FL_ENGINE_DISPLAY(g_ptr_array_index(displays, i));
+
+    d[i].struct_size = sizeof(FlutterEngineDisplay);
+    d[i].display_id = 0;
+    d[i].refresh_rate = 0.0;
+    d[i].width = 0;
+    d[i].height = 0;
+    d[i].device_pixel_ratio = 1.0;
+  }
+  self->embedder_api.NotifyDisplayUpdate(
+      self->engine, kFlutterEngineDisplaysUpdateTypeStartup, d, displays->len);
 }
 
 void fl_engine_send_window_metrics_event(FlEngine* self,

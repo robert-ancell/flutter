@@ -211,6 +211,15 @@ void fl_engine_set_update_semantics_handler(
     GDestroyNotify destroy_notify);
 
 /**
+ * fl_engine_notify_display_update:
+ * @engine: an #FlEngine.
+ * @displays: display information.
+ *
+ * Update engine with the display state.
+ */
+void fl_engine_notify_display_update(FlEngine* engine, GPtrArray* displays);
+
+/**
  * fl_engine_send_window_metrics_event:
  * @engine: an #FlEngine.
  * @view_id: the view that the event occured on.

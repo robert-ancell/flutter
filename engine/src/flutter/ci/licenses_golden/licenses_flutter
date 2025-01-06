@@ -44348,6 +44348,8 @@ ORIGIN: ../../../flutter/shell/platform/linux/fl_dart_project.cc + ../../../flut
 ORIGIN: ../../../flutter/shell/platform/linux/fl_dart_project_private.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_dart_project_test.cc + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_engine.cc + ../../../flutter/LICENSE
+ORIGIN: ../../../flutter/shell/platform/linux/fl_engine_display.cc + ../../../flutter/LICENSE
+ORIGIN: ../../../flutter/shell/platform/linux/fl_engine_display.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_engine_private.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_engine_test.cc + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_event_channel.cc + ../../../flutter/LICENSE
@@ -47316,6 +47318,8 @@ FILE: ../../../flutter/shell/platform/linux/fl_dart_project.cc
 FILE: ../../../flutter/shell/platform/linux/fl_dart_project_private.h
 FILE: ../../../flutter/shell/platform/linux/fl_dart_project_test.cc
 FILE: ../../../flutter/shell/platform/linux/fl_engine.cc
+FILE: ../../../flutter/shell/platform/linux/fl_engine_display.cc
+FILE: ../../../flutter/shell/platform/linux/fl_engine_display.h
 FILE: ../../../flutter/shell/platform/linux/fl_engine_private.h
 FILE: ../../../flutter/shell/platform/linux/fl_engine_test.cc
 FILE: ../../../flutter/shell/platform/linux/fl_event_channel.cc

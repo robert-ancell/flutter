@@ -680,8 +680,8 @@ static gboolean event_is_redispatched(FlView* self, FlKeyEvent* event) {
 }
 
 static gboolean handle_key_event(FlView* self, GdkEventKey* key_event) {
-  g_autoptr(FlKeyEvent) event = fl_key_event_new_from_gdk_event(
-      gdk_event_copy(reinterpret_cast<GdkEvent*>(key_event)));
+  g_autoptr(FlKeyEvent) event =
+      fl_key_event_new_from_gdk_event(reinterpret_cast<GdkEvent*>(key_event));
 
   if (event_is_redispatched(self, event)) {
     return TRUE;

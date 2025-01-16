@@ -71,7 +71,7 @@ FlKeyEvent* fl_key_event_new_from_gdk_event(GdkEvent* event) {
   self->keyval = keyval;
   self->state = state;
   self->group = event->key.group;
-  self->origin = event;
+  self->origin = gdk_event_copy(event);
 
   return self;
 }

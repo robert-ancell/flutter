@@ -45,6 +45,9 @@ struct _FlView {
   // Background color.
   GdkRGBA* background_color;
 
+  // FIXME
+  GMainLoop* render_loop;
+
   // TRUE if have got the first frame to render.
   gboolean have_first_frame;
 
@@ -203,19 +206,6 @@ static void handle_geometry_changed(FlView* self) {
   fl_engine_send_window_metrics_event(
       self->engine, display_id, self->view_id, allocation.width * scale_factor,
       allocation.height * scale_factor, scale_factor);
-
-  // Make sure the view has been realized and its size has been allocated before
-  // waiting for a frame. `fl_view_realize()` and `fl_view_size_allocate()` may
-  // be called in either order depending on the order in which the window is
-  // shown and the view is added to a container in the app runner.
-  //
-  // Note: `gtk_widget_init()` initializes the size allocation to 1x1.
-  if (allocation.width > 1 && allocation.height > 1 &&
-      gtk_widget_get_realized(GTK_WIDGET(self))) {
-    fl_renderer_wait_for_frame(FL_RENDERER(self->renderer),
-                               allocation.width * scale_factor,
-                               allocation.height * scale_factor);
-  }
 }
 
 static void view_added_cb(GObject* object,
@@ -259,6 +249,12 @@ static void on_pre_engine_restart_cb(FlView* self) {
 // Implements FlRenderable::redraw
 static void fl_view_redraw(FlRenderable* renderable) {
   FlView* self = FL_VIEW(renderable);
+
+  // If waiting for a frame in render callback, then continue rendering.
+  if (self->render_loop != nullptr) {
+    g_main_loop_quit(self->render_loop);
+    g_clear_pointer(&self->render_loop, g_main_loop_unref);
+  }
 
   gtk_widget_queue_draw(GTK_WIDGET(self->gl_area));
 
@@ -522,6 +518,31 @@ static gboolean render_cb(FlView* self, GdkGLContext* context) {
   int width = gtk_widget_get_allocated_width(GTK_WIDGET(self->gl_area));
   int height = gtk_widget_get_allocated_height(GTK_WIDGET(self->gl_area));
   gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self->gl_area));
+  //  g_printerr("render_cb %d\n",
+  //  fl_renderer_have_frame(FL_RENDERER(self->renderer), self->view_id,
+  //						                           width
+  //* scale_factor, height * scale_factor));
+
+  // g_printerr("render_cb.2 %d\n",
+  // fl_renderer_have_frame(FL_RENDERER(self->renderer), self->view_id,
+  // width *
+  // scale_factor, height * scale_factor));
+
+  if (!fl_renderer_have_frame(FL_RENDERER(self->renderer), self->view_id,
+                              width * scale_factor, height * scale_factor)) {
+    g_printerr("render loop\n");
+    g_assert(self->render_loop == nullptr);
+    self->render_loop = g_main_loop_new(g_main_context_default(), FALSE);
+    g_main_loop_run(self->render_loop);
+    g_printerr("~render loop\n");
+
+    // Set this area back to current - it might have been cleared processing the
+    // above.
+    gtk_gl_area_make_current(self->gl_area);
+  }
+  g_assert(fl_renderer_have_frame(FL_RENDERER(self->renderer), self->view_id,
+                                  width * scale_factor, height * scale_factor));
+
   fl_renderer_render(FL_RENDERER(self->renderer), self->view_id,
                      width * scale_factor, height * scale_factor,
                      self->background_color);

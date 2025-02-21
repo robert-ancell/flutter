@@ -246,8 +246,8 @@ static bool compositor_create_backing_store_callback(
     const FlutterBackingStoreConfig* config,
     FlutterBackingStore* backing_store_out,
     void* user_data) {
-  g_return_val_if_fail(FL_IS_RENDERER(user_data), false);
-  return fl_renderer_create_backing_store(FL_RENDERER(user_data), config,
+  FlEngine* self = FL_ENGINE(user_data);
+  return fl_renderer_create_backing_store(self->renderer, config,
                                           backing_store_out);
 }
 
@@ -255,17 +255,16 @@ static bool compositor_create_backing_store_callback(
 static bool compositor_collect_backing_store_callback(
     const FlutterBackingStore* backing_store,
     void* user_data) {
-  g_return_val_if_fail(FL_IS_RENDERER(user_data), false);
-  return fl_renderer_collect_backing_store(FL_RENDERER(user_data),
-                                           backing_store);
+  FlEngine* self = FL_ENGINE(user_data);
+  return fl_renderer_collect_backing_store(self->renderer, backing_store);
 }
 
 // Called when embedder should composite contents of each layer onto the screen.
 static bool compositor_present_view_callback(
     const FlutterPresentViewInfo* info) {
-  g_return_val_if_fail(FL_IS_RENDERER(info->user_data), false);
-  return fl_renderer_present_layers(FL_RENDERER(info->user_data), info->view_id,
-                                    info->layers, info->layers_count);
+  FlEngine* self = FL_ENGINE(info->user_data);
+  return fl_renderer_present_layers(self->renderer, info->view_id, info->layers,
+                                    info->layers_count);
 }
 
 // Flutter engine rendering callbacks.
@@ -659,7 +658,7 @@ gboolean fl_engine_start(FlEngine* self, GError** error) {
 
   FlutterCompositor compositor = {};
   compositor.struct_size = sizeof(FlutterCompositor);
-  compositor.user_data = self->renderer;
+  compositor.user_data = self;
   compositor.create_backing_store_callback =
       compositor_create_backing_store_callback;
   compositor.collect_backing_store_callback =

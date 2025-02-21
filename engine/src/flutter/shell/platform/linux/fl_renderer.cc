@@ -54,13 +54,6 @@ typedef struct {
   // Views being rendered.
   GHashTable* views;
 
-  // target dimension for resizing
-  int target_width;
-  int target_height;
-
-  // whether the renderer waits for frame render
-  bool blocking_main_thread;
-
   // true if frame was completed; resizing is not synchronized until first frame
   // was rendered
   bool had_first_frame;
@@ -142,19 +135,6 @@ static void initialize(FlRenderer* self) {
   } else {
     priv->sized_format = GL_RGBA8;
     priv->general_format = GL_RGBA;
-  }
-}
-
-static void fl_renderer_unblock_main_thread(FlRenderer* self) {
-  FlRendererPrivate* priv = reinterpret_cast<FlRendererPrivate*>(
-      fl_renderer_get_instance_private(self));
-  if (priv->blocking_main_thread) {
-    priv->blocking_main_thread = false;
-
-    g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&priv->engine));
-    if (engine != nullptr) {
-      fl_task_runner_release_main_thread(fl_engine_get_task_runner(engine));
-    }
   }
 }
 
@@ -306,8 +286,6 @@ static void fl_renderer_dispose(GObject* object) {
   FlRendererPrivate* priv = reinterpret_cast<FlRendererPrivate*>(
       fl_renderer_get_instance_private(self));
 
-  fl_renderer_unblock_main_thread(self);
-
   g_weak_ref_clear(&priv->engine);
   g_clear_pointer(&priv->views, g_hash_table_unref);
   g_clear_pointer(&priv->framebuffers_by_view_id, g_hash_table_unref);
@@ -430,24 +408,11 @@ gboolean fl_renderer_collect_backing_store(
   return TRUE;
 }
 
+// FIXME: Kill
 void fl_renderer_wait_for_frame(FlRenderer* self,
                                 int target_width,
                                 int target_height) {
-  FlRendererPrivate* priv = reinterpret_cast<FlRendererPrivate*>(
-      fl_renderer_get_instance_private(self));
-
   g_return_if_fail(FL_IS_RENDERER(self));
-
-  priv->target_width = target_width;
-  priv->target_height = target_height;
-
-  if (priv->had_first_frame && !priv->blocking_main_thread) {
-    priv->blocking_main_thread = true;
-    g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&priv->engine));
-    if (engine != nullptr) {
-      fl_task_runner_block_main_thread(fl_engine_get_task_runner(engine));
-    }
-  }
 }
 
 gboolean fl_renderer_present_layers(FlRenderer* self,
@@ -457,20 +422,11 @@ gboolean fl_renderer_present_layers(FlRenderer* self,
   FlRendererPrivate* priv = reinterpret_cast<FlRendererPrivate*>(
       fl_renderer_get_instance_private(self));
 
+  g_printerr("fl_renderer_present_layers\n");
+
   g_return_val_if_fail(FL_IS_RENDERER(self), FALSE);
 
-  // ignore incoming frame with wrong dimensions in trivial case with just one
-  // layer
-  if (priv->blocking_main_thread && layers_count == 1 &&
-      layers[0]->offset.x == 0 && layers[0]->offset.y == 0 &&
-      (layers[0]->size.width != priv->target_width ||
-       layers[0]->size.height != priv->target_height)) {
-    return TRUE;
-  }
-
   priv->had_first_frame = true;
-
-  fl_renderer_unblock_main_thread(self);
 
   g_autoptr(GPtrArray) framebuffers =
       g_ptr_array_new_with_free_func(g_object_unref);
@@ -580,6 +536,27 @@ void fl_renderer_setup(FlRenderer* self) {
   if (!priv->has_gl_framebuffer_blit) {
     setup_shader(self);
   }
+}
+
+gboolean fl_renderer_have_frame(FlRenderer* self,
+                                FlutterViewId view_id,
+                                size_t width,
+                                size_t height) {
+  FlRendererPrivate* priv = reinterpret_cast<FlRendererPrivate*>(
+      fl_renderer_get_instance_private(self));
+
+  g_return_val_if_fail(FL_IS_RENDERER(self), FALSE);
+
+  GPtrArray* framebuffers = reinterpret_cast<GPtrArray*>((g_hash_table_lookup(
+      priv->framebuffers_by_view_id, GINT_TO_POINTER(view_id))));
+  if (framebuffers == nullptr || framebuffers->len == 0) {
+    return FALSE;
+  }
+
+  FlFramebuffer* framebuffer =
+      FL_FRAMEBUFFER(g_ptr_array_index(framebuffers, 0));
+  return fl_framebuffer_get_width(framebuffer) == width &&
+         fl_framebuffer_get_height(framebuffer) == height;
 }
 
 void fl_renderer_render(FlRenderer* self,

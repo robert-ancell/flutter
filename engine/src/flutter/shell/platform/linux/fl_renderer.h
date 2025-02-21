@@ -202,6 +202,15 @@ void fl_renderer_wait_for_frame(FlRenderer* renderer,
 void fl_renderer_setup(FlRenderer* renderer);
 
 /**
+ * fl_renderer_have_frame:
+ * FIXME
+ */
+gboolean fl_renderer_have_frame(FlRenderer* renderer,
+                                FlutterViewId view_id,
+                                size_t width,
+                                size_t height);
+
+/**
  * fl_renderer_render:
  * @renderer: an #FlRenderer.
  * @view_id: view to render.

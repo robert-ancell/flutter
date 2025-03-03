@@ -30,7 +30,8 @@ typedef struct {
   GtkWindow* window;
   FlView* view;
   guint first_frame_cb_id;
-  guint window_destroy_cb_id;
+  guint size_allocate_cb_id;
+  guint destroy_cb_id;
 } WindowData;
 
 static WindowData* window_data_new(FlWindowingHandler* self,
@@ -45,7 +46,8 @@ static WindowData* window_data_new(FlWindowingHandler* self,
 
 static void window_data_free(WindowData* data) {
   g_signal_handler_disconnect(data->view, data->first_frame_cb_id);
-  g_signal_handler_disconnect(data->window, data->window_destroy_cb_id);
+  g_signal_handler_disconnect(data->window, data->size_allocate_cb_id);
+  g_signal_handler_disconnect(data->window, data->destroy_cb_id);
   g_object_unref(data->window);
   g_object_unref(data->view);
   g_free(data);
@@ -54,6 +56,35 @@ static void window_data_free(WindowData* data) {
 // Called when the first frame is received.
 static void first_frame_cb(FlView* view, WindowData* data) {
   gtk_window_present(data->window);
+}
+
+static void on_window_changed_cb(GObject* object,
+                                 GAsyncResult* result,
+                                 gpointer user_data) {
+  g_autoptr(GError) error = nullptr;
+  if (!fl_windowing_channel_on_window_changed_finish(object, result, &error)) {
+    if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+      g_warning("Failed to report window changed: %s", error->message);
+    }
+  }
+}
+
+// Called when the window changes size.
+static void size_allocate_cb(GtkWidget* widget,
+                             GtkAllocation* allocation,
+                             WindowData* data) {
+  FlWindowingHandlerPrivate* priv =
+      reinterpret_cast<FlWindowingHandlerPrivate*>(
+          fl_windowing_handler_get_instance_private(data->self));
+
+  int64_t view_id = fl_view_get_id(data->view);
+
+  FlWindowingSize size;
+  size.width = allocation->width;
+  size.height = allocation->height;
+  fl_windowing_channel_on_window_changed(priv->channel, view_id, &size, nullptr,
+                                         priv->cancellable,
+                                         on_window_changed_cb, nullptr);
 }
 
 static void on_window_destroyed_cb(GObject* object,
@@ -69,7 +100,7 @@ static void on_window_destroyed_cb(GObject* object,
 }
 
 // Called when the window is destroyed.
-static void window_destroy_cb(GtkWidget* widget, WindowData* data) {
+static void destroy_cb(GtkWidget* widget, WindowData* data) {
   FlWindowingHandlerPrivate* priv =
       reinterpret_cast<FlWindowingHandlerPrivate*>(
           fl_windowing_handler_get_instance_private(data->self));
@@ -166,8 +197,10 @@ static FlMethodResponse* create_regular(FlWindowingSize* size,
   WindowData* data = window_data_new(self, GTK_WINDOW(window), view);
   data->first_frame_cb_id =
       g_signal_connect(view, "first-frame", G_CALLBACK(first_frame_cb), data);
-  data->window_destroy_cb_id =
-      g_signal_connect(window, "destroy", G_CALLBACK(window_destroy_cb), data);
+  data->size_allocate_cb_id = g_signal_connect(
+      window, "size-allocate", G_CALLBACK(size_allocate_cb), data);
+  data->destroy_cb_id =
+      g_signal_connect(window, "destroy", G_CALLBACK(destroy_cb), data);
 
   // Make the resources for the view so rendering can start.
   // We'll show the view when we have the first frame.

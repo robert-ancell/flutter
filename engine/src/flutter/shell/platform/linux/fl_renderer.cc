@@ -71,8 +71,8 @@ typedef struct {
   // Shader program.
   GLuint program;
 
-  // Framebuffers to render keyed by view ID.
-  GHashTable* framebuffers_by_view_id;
+  // Current frames keyed by view ID.
+  GHashTable* frames_by_view_id;
 } FlRendererPrivate;
 
 G_DEFINE_TYPE_WITH_PRIVATE(FlRenderer, fl_renderer, G_TYPE_OBJECT)
@@ -310,7 +310,7 @@ static void fl_renderer_dispose(GObject* object) {
 
   g_weak_ref_clear(&priv->engine);
   g_clear_pointer(&priv->views, g_hash_table_unref);
-  g_clear_pointer(&priv->framebuffers_by_view_id, g_hash_table_unref);
+  g_clear_pointer(&priv->frames_by_view_id, g_object_unref);
 
   G_OBJECT_CLASS(fl_renderer_parent_class)->dispose(object);
 }
@@ -324,9 +324,8 @@ static void fl_renderer_init(FlRenderer* self) {
       fl_renderer_get_instance_private(self));
   priv->views = g_hash_table_new_full(g_direct_hash, g_direct_equal, nullptr,
                                       free_weak_ref);
-  priv->framebuffers_by_view_id = g_hash_table_new_full(
-      g_direct_hash, g_direct_equal, nullptr,
-      reinterpret_cast<GDestroyNotify>(g_ptr_array_unref));
+  priv->frames_by_view_id = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+                                                  nullptr, g_object_unref);
 }
 
 void fl_renderer_set_engine(FlRenderer* self, FlEngine* engine) {
@@ -498,46 +497,40 @@ gboolean fl_renderer_present_layers(FlRenderer* self,
     return TRUE;
   }
 
+  // Composite into a single framebuffer.
+  size_t width = 0, height = 0;
+  for (guint i = 0; i < framebuffers->len; i++) {
+    FlFramebuffer* framebuffer =
+        FL_FRAMEBUFFER(g_ptr_array_index(framebuffers, i));
+
+    size_t w = fl_framebuffer_get_width(framebuffer);
+    size_t h = fl_framebuffer_get_height(framebuffer);
+    if (w > width) {
+      width = w;
+    }
+    if (h > height) {
+      height = h;
+    }
+  }
+
+  // FIXME: Reuse if already the correct size
+
+  g_autoptr(FlFramebuffer) frame =
+      fl_framebuffer_new(priv->general_format, width, height);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fl_framebuffer_get_id(frame));
+  render(self, framebuffers, width, height);
+
   if (view_id == flutter::kFlutterImplicitViewId) {
     // Store for rendering later
-    g_hash_table_insert(priv->framebuffers_by_view_id, GINT_TO_POINTER(view_id),
-                        g_ptr_array_ref(framebuffers));
+    g_hash_table_insert(priv->frames_by_view_id, GINT_TO_POINTER(view_id),
+                        g_object_ref(frame));
   } else {
-    // Composite into a single framebuffer.
-    if (framebuffers->len > 1) {
-      size_t width = 0, height = 0;
-
-      for (guint i = 0; i < framebuffers->len; i++) {
-        FlFramebuffer* framebuffer =
-            FL_FRAMEBUFFER(g_ptr_array_index(framebuffers, i));
-
-        size_t w = fl_framebuffer_get_width(framebuffer);
-        size_t h = fl_framebuffer_get_height(framebuffer);
-        if (w > width) {
-          width = w;
-        }
-        if (h > height) {
-          height = h;
-        }
-      }
-
-      FlFramebuffer* view_framebuffer =
-          fl_framebuffer_new(priv->general_format, width, height);
-      glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
-                        fl_framebuffer_get_id(view_framebuffer));
-      render(self, framebuffers, width, height);
-      g_ptr_array_set_size(framebuffers, 0);
-      g_ptr_array_add(framebuffers, view_framebuffer);
-    }
-
     // Read back pixel values.
-    FlFramebuffer* framebuffer =
-        FL_FRAMEBUFFER(g_ptr_array_index(framebuffers, 0));
-    size_t width = fl_framebuffer_get_width(framebuffer);
-    size_t height = fl_framebuffer_get_height(framebuffer);
+    size_t width = fl_framebuffer_get_width(frame);
+    size_t height = fl_framebuffer_get_height(frame);
     size_t data_length = width * height * 4;
     g_autofree uint8_t* data = static_cast<uint8_t*>(malloc(data_length));
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fl_framebuffer_get_id(framebuffer));
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fl_framebuffer_get_id(frame));
     glReadPixels(0, 0, width, height, priv->general_format, GL_UNSIGNED_BYTE,
                  data);
 
@@ -552,11 +545,8 @@ gboolean fl_renderer_present_layers(FlRenderer* self,
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
                  GL_UNSIGNED_BYTE, data);
 
-    g_autoptr(GPtrArray) secondary_framebuffers =
-        g_ptr_array_new_with_free_func(g_object_unref);
-    g_ptr_array_add(secondary_framebuffers, g_object_ref(view_framebuffer));
-    g_hash_table_insert(priv->framebuffers_by_view_id, GINT_TO_POINTER(view_id),
-                        g_ptr_array_ref(secondary_framebuffers));
+    g_hash_table_insert(priv->frames_by_view_id, GINT_TO_POINTER(view_id),
+                        g_object_ref(view_framebuffer));
   }
 
   fl_renderable_redraw(renderable);
@@ -596,9 +586,11 @@ void fl_renderer_render(FlRenderer* self,
                background_color->blue, background_color->alpha);
   glClear(GL_COLOR_BUFFER_BIT);
 
-  GPtrArray* framebuffers = reinterpret_cast<GPtrArray*>((g_hash_table_lookup(
-      priv->framebuffers_by_view_id, GINT_TO_POINTER(view_id))));
-  if (framebuffers != nullptr) {
+  FlFramebuffer* frame = FL_FRAMEBUFFER(
+      g_hash_table_lookup(priv->frames_by_view_id, GINT_TO_POINTER(view_id)));
+  if (frame != nullptr) {
+    g_autoptr(GPtrArray) framebuffers = g_ptr_array_new();
+    g_ptr_array_add(framebuffers, frame);
     render(self, framebuffers, width, height);
   }
 

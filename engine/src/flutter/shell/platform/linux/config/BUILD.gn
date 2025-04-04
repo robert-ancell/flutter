@@ -13,6 +13,14 @@ pkg_config("gtk") {
   packages = [ "gtk+-3.0" ]
 }
 
+pkg_config("wayland-client") {
+  packages = [ "wayland-client" ]
+}
+
+pkg_config("wayland-egl") {
+  packages = [ "wayland-egl" ]
+}
+
 pkg_config("egl") {
   packages = [ "egl" ]
 }

@@ -53319,6 +53319,8 @@ ORIGIN: ../../../flutter/shell/platform/linux/fl_standard_method_codec.cc + ../.
 ORIGIN: ../../../flutter/shell/platform/linux/fl_standard_method_codec_test.cc + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_string_codec.cc + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_string_codec_test.cc + ../../../flutter/LICENSE
+ORIGIN: ../../../flutter/shell/platform/linux/fl_subsurface.cc + ../../../flutter/LICENSE
+ORIGIN: ../../../flutter/shell/platform/linux/fl_subsurface.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_task_runner.cc + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_task_runner.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_text_input_channel.cc + ../../../flutter/LICENSE
@@ -53345,6 +53347,8 @@ ORIGIN: ../../../flutter/shell/platform/linux/fl_view_accessible.h + ../../../fl
 ORIGIN: ../../../flutter/shell/platform/linux/fl_view_accessible_test.cc + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_view_private.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_view_test.cc + ../../../flutter/LICENSE
+ORIGIN: ../../../flutter/shell/platform/linux/fl_wayland_display.cc + ../../../flutter/LICENSE
+ORIGIN: ../../../flutter/shell/platform/linux/fl_wayland_display.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_window_state_monitor.cc + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_window_state_monitor.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_window_state_monitor_test.cc + ../../../flutter/LICENSE
@@ -56341,6 +56345,8 @@ FILE: ../../../flutter/shell/platform/linux/fl_standard_method_codec.cc
 FILE: ../../../flutter/shell/platform/linux/fl_standard_method_codec_test.cc
 FILE: ../../../flutter/shell/platform/linux/fl_string_codec.cc
 FILE: ../../../flutter/shell/platform/linux/fl_string_codec_test.cc
+FILE: ../../../flutter/shell/platform/linux/fl_subsurface.cc
+FILE: ../../../flutter/shell/platform/linux/fl_subsurface.h
 FILE: ../../../flutter/shell/platform/linux/fl_task_runner.cc
 FILE: ../../../flutter/shell/platform/linux/fl_task_runner.h
 FILE: ../../../flutter/shell/platform/linux/fl_text_input_channel.cc
@@ -56367,6 +56373,8 @@ FILE: ../../../flutter/shell/platform/linux/fl_view_accessible.h
 FILE: ../../../flutter/shell/platform/linux/fl_view_accessible_test.cc
 FILE: ../../../flutter/shell/platform/linux/fl_view_private.h
 FILE: ../../../flutter/shell/platform/linux/fl_view_test.cc
+FILE: ../../../flutter/shell/platform/linux/fl_wayland_display.cc
+FILE: ../../../flutter/shell/platform/linux/fl_wayland_display.h
 FILE: ../../../flutter/shell/platform/linux/fl_window_state_monitor.cc
 FILE: ../../../flutter/shell/platform/linux/fl_window_state_monitor.h
 FILE: ../../../flutter/shell/platform/linux/fl_window_state_monitor_test.cc

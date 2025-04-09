@@ -31,7 +31,6 @@ TEST(FlRendererTest, BackgroundColor) {
   g_autoptr(FlRenderer) renderer = fl_renderer_new(engine);
   fl_renderer_setup(FL_RENDERER(renderer));
   fl_engine_set_implicit_view(engine, FL_RENDERABLE(renderable));
-  fl_renderer_wait_for_frame(FL_RENDERER(renderer), 1024, 1024);
   FlutterBackingStoreConfig config = {
       .struct_size = sizeof(FlutterBackingStoreConfig),
       .size = {.width = 1024, .height = 1024}};
@@ -82,7 +81,6 @@ TEST(FlRendererTest, RestoresGLState) {
       fl_framebuffer_new(GL_RGB, kWidth, kHeight);
 
   fl_engine_set_implicit_view(engine, FL_RENDERABLE(renderable));
-  fl_renderer_wait_for_frame(FL_RENDERER(renderer), kWidth, kHeight);
 
   FlutterBackingStore backing_store;
   backing_store.type = kFlutterBackingStoreTypeOpenGL;
@@ -146,7 +144,6 @@ TEST(FlRendererTest, BlitFramebuffer) {
   g_autoptr(FlRenderer) renderer = fl_renderer_new(engine);
   fl_renderer_setup(FL_RENDERER(renderer));
   fl_engine_set_implicit_view(engine, FL_RENDERABLE(renderable));
-  fl_renderer_wait_for_frame(FL_RENDERER(renderer), 1024, 1024);
   FlutterBackingStoreConfig config = {
       .struct_size = sizeof(FlutterBackingStoreConfig),
       .size = {.width = 1024, .height = 1024}};
@@ -203,7 +200,6 @@ TEST(FlRendererTest, BlitFramebufferExtension) {
   g_autoptr(FlRenderer) renderer = fl_renderer_new(engine);
   fl_renderer_setup(FL_RENDERER(renderer));
   fl_engine_set_implicit_view(engine, FL_RENDERABLE(renderable));
-  fl_renderer_wait_for_frame(FL_RENDERER(renderer), 1024, 1024);
   FlutterBackingStoreConfig config = {
       .struct_size = sizeof(FlutterBackingStoreConfig),
       .size = {.width = 1024, .height = 1024}};
@@ -253,7 +249,6 @@ TEST(FlRendererTest, NoBlitFramebuffer) {
   g_autoptr(FlRenderer) renderer = fl_renderer_new(engine);
   fl_renderer_setup(FL_RENDERER(renderer));
   fl_engine_set_implicit_view(engine, FL_RENDERABLE(renderable));
-  fl_renderer_wait_for_frame(FL_RENDERER(renderer), 1024, 1024);
   FlutterBackingStoreConfig config = {
       .struct_size = sizeof(FlutterBackingStoreConfig),
       .size = {.width = 1024, .height = 1024}};
@@ -306,7 +301,6 @@ TEST(FlRendererTest, BlitFramebufferNvidia) {
   g_autoptr(FlRenderer) renderer = fl_renderer_new(engine);
   fl_renderer_setup(FL_RENDERER(renderer));
   fl_engine_set_implicit_view(engine, FL_RENDERABLE(renderable));
-  fl_renderer_wait_for_frame(FL_RENDERER(renderer), 1024, 1024);
   FlutterBackingStoreConfig config = {
       .struct_size = sizeof(FlutterBackingStoreConfig),
       .size = {.width = 1024, .height = 1024}};
@@ -363,7 +357,6 @@ TEST(FlRendererTest, MultiView) {
   FlutterViewId view_id =
       fl_engine_add_view(engine, FL_RENDERABLE(secondary_renderable), 1024, 768,
                          1.0, nullptr, nullptr, nullptr);
-  fl_renderer_wait_for_frame(FL_RENDERER(renderer), 1024, 1024);
 
   EXPECT_EQ(fl_mock_renderable_get_redraw_count(renderable),
             static_cast<size_t>(0));

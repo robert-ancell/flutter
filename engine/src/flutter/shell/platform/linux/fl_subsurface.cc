@@ -90,14 +90,12 @@ static void fl_subsurface_size_allocate(GtkWidget* widget,
   GTK_WIDGET_CLASS(fl_subsurface_parent_class)
       ->size_allocate(widget, allocation);
 
-  wl_subsurface_set_position(self->subsurface, allocation->x, allocation->y);
+  // FIXME: The 26,70 offset is the allocation of the GtkEventBox parent, need
+  // to work out how to get this.
+  wl_subsurface_set_position(self->subsurface, 26,
+                             70);  // allocation->x, allocation->y);
   wl_egl_window_resize(self->egl_window, allocation->width, allocation->height,
                        0, 0);
-
-  fl_subsurface_make_current(self);
-  glClearColor(1.0, 0.0, 0.0, 1.0);
-  glClear(GL_COLOR_BUFFER_BIT);
-  fl_subsurface_swap_buffers(self);
 
   g_signal_emit(self, fl_subsurface_signals[SIGNAL_RESIZE], 0);
 }

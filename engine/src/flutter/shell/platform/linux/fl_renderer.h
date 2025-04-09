@@ -90,20 +90,6 @@ gboolean fl_renderer_present_layers(FlRenderer* renderer,
                                     size_t layers_count);
 
 /**
- * fl_renderer_wait_for_frame:
- * @renderer: an #FlRenderer.
- * @target_width: width of frame being waited for
- * @target_height: height of frame being waited for
- *
- * Holds the thread until frame with requested dimensions is presented.
- * While waiting for frame Flutter platform and raster tasks are being
- * processed.
- */
-void fl_renderer_wait_for_frame(FlRenderer* renderer,
-                                int target_width,
-                                int target_height);
-
-/**
  * fl_renderer_setup:
  * @renderer: an #FlRenderer.
  *
@@ -111,22 +97,6 @@ void fl_renderer_wait_for_frame(FlRenderer* renderer,
  * context.
  */
 void fl_renderer_setup(FlRenderer* renderer);
-
-/**
- * fl_renderer_render:
- * @renderer: an #FlRenderer.
- * @view_id: view to render.
- * @width: width of the window in pixels.
- * @height: height of the window in pixels.
- * @background_color: color to use for background.
- *
- * Performs OpenGL commands to render current Flutter view.
- */
-void fl_renderer_render(FlRenderer* renderer,
-                        FlutterViewId view_id,
-                        int width,
-                        int height,
-                        const GdkRGBA* background_color);
 
 /**
  * fl_renderer_cleanup:

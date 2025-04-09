@@ -60,9 +60,6 @@ struct _FlRenderer {
   int target_width;
   int target_height;
 
-  // whether the renderer waits for frame render
-  bool blocking_main_thread;
-
   // true if frame was completed; resizing is not synchronized until first frame
   // was rendered
   bool had_first_frame;
@@ -72,17 +69,6 @@ struct _FlRenderer {
 
   // Shader program.
   GLuint program;
-
-  // Framebuffers to render keyed by view ID.
-  GHashTable* framebuffers_by_view_id;
-
-  // Mutex used when blocking the raster thread until a task is completed on
-  // platform thread.
-  GMutex present_mutex;
-
-  // Condition to unblock the raster thread after task is completed on platform
-  // thread.
-  GCond present_condition;
 };
 
 G_DEFINE_TYPE(FlRenderer, fl_renderer, G_TYPE_OBJECT)
@@ -143,17 +129,6 @@ static void initialize(FlRenderer* self) {
   } else {
     self->sized_format = GL_RGBA8;
     self->general_format = GL_RGBA;
-  }
-}
-
-static void fl_renderer_unblock_main_thread(FlRenderer* self) {
-  if (self->blocking_main_thread) {
-    self->blocking_main_thread = false;
-
-    g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&self->engine));
-    if (engine != nullptr) {
-      fl_task_runner_release_main_thread(fl_engine_get_task_runner(engine));
-    }
   }
 }
 
@@ -280,168 +255,11 @@ static void render_with_textures(FlRenderer* self,
   glBindBuffer(GL_ARRAY_BUFFER, saved_array_buffer_binding);
 }
 
-static void render(FlRenderer* self,
-                   GPtrArray* framebuffers,
-                   int width,
-                   int height) {
-  if (self->has_gl_framebuffer_blit) {
-    render_with_blit(self, framebuffers);
-  } else {
-    render_with_textures(self, framebuffers, width, height);
-  }
-}
-
-static gboolean present_layers(FlRenderer* self,
-                               FlutterViewId view_id,
-                               const FlutterLayer** layers,
-                               size_t layers_count) {
-  g_return_val_if_fail(FL_IS_RENDERER(self), FALSE);
-
-  // ignore incoming frame with wrong dimensions in trivial case with just one
-  // layer
-  if (self->blocking_main_thread && layers_count == 1 &&
-      layers[0]->offset.x == 0 && layers[0]->offset.y == 0 &&
-      (layers[0]->size.width != self->target_width ||
-       layers[0]->size.height != self->target_height)) {
-    return TRUE;
-  }
-
-  self->had_first_frame = true;
-
-  fl_renderer_unblock_main_thread(self);
-
-  g_autoptr(GPtrArray) framebuffers =
-      g_ptr_array_new_with_free_func(g_object_unref);
-  for (size_t i = 0; i < layers_count; ++i) {
-    const FlutterLayer* layer = layers[i];
-    switch (layer->type) {
-      case kFlutterLayerContentTypeBackingStore: {
-        const FlutterBackingStore* backing_store = layer->backing_store;
-        FlFramebuffer* framebuffer =
-            FL_FRAMEBUFFER(backing_store->open_gl.framebuffer.user_data);
-        g_ptr_array_add(framebuffers, g_object_ref(framebuffer));
-      } break;
-      case kFlutterLayerContentTypePlatformView: {
-        // TODO(robert-ancell) Not implemented -
-        // https://github.com/flutter/flutter/issues/41724
-      } break;
-    }
-  }
-
-  g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&self->engine));
-  if (engine == nullptr) {
-    return TRUE;
-  }
-  g_autoptr(FlRenderable) renderable =
-      fl_engine_get_renderable(engine, view_id);
-  if (renderable == nullptr) {
-    return TRUE;
-  }
-
-  if (view_id == flutter::kFlutterImplicitViewId) {
-    // Store for rendering later
-    g_hash_table_insert(self->framebuffers_by_view_id, GINT_TO_POINTER(view_id),
-                        g_ptr_array_ref(framebuffers));
-  } else {
-    // Composite into a single framebuffer.
-    if (framebuffers->len > 1) {
-      size_t width = 0, height = 0;
-
-      for (guint i = 0; i < framebuffers->len; i++) {
-        FlFramebuffer* framebuffer =
-            FL_FRAMEBUFFER(g_ptr_array_index(framebuffers, i));
-
-        size_t w = fl_framebuffer_get_width(framebuffer);
-        size_t h = fl_framebuffer_get_height(framebuffer);
-        if (w > width) {
-          width = w;
-        }
-        if (h > height) {
-          height = h;
-        }
-      }
-
-      FlFramebuffer* view_framebuffer =
-          fl_framebuffer_new(self->general_format, width, height);
-      glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
-                        fl_framebuffer_get_id(view_framebuffer));
-      render(self, framebuffers, width, height);
-      g_ptr_array_set_size(framebuffers, 0);
-      g_ptr_array_add(framebuffers, view_framebuffer);
-    }
-
-    // Read back pixel values.
-    FlFramebuffer* framebuffer =
-        FL_FRAMEBUFFER(g_ptr_array_index(framebuffers, 0));
-    size_t width = fl_framebuffer_get_width(framebuffer);
-    size_t height = fl_framebuffer_get_height(framebuffer);
-    size_t data_length = width * height * 4;
-    g_autofree uint8_t* data = static_cast<uint8_t*>(malloc(data_length));
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fl_framebuffer_get_id(framebuffer));
-    glReadPixels(0, 0, width, height, self->general_format, GL_UNSIGNED_BYTE,
-                 data);
-
-    // Write into a texture in the views context.
-    fl_renderable_make_current(renderable);
-    FlFramebuffer* view_framebuffer =
-        fl_framebuffer_new(self->general_format, width, height);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER,
-                      fl_framebuffer_get_id(view_framebuffer));
-    glBindTexture(GL_TEXTURE_2D,
-                  fl_framebuffer_get_texture_id(view_framebuffer));
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
-                 GL_UNSIGNED_BYTE, data);
-
-    g_autoptr(GPtrArray) secondary_framebuffers =
-        g_ptr_array_new_with_free_func(g_object_unref);
-    g_ptr_array_add(secondary_framebuffers, g_object_ref(view_framebuffer));
-    g_hash_table_insert(self->framebuffers_by_view_id, GINT_TO_POINTER(view_id),
-                        g_ptr_array_ref(secondary_framebuffers));
-  }
-
-  return TRUE;
-}
-
-typedef struct {
-  FlRenderer* self;
-
-  FlutterViewId view_id;
-
-  const FlutterLayer** layers;
-  size_t layers_count;
-
-  gboolean result;
-
-  gboolean finished;
-} PresentLayersData;
-
-// Perform the present on the main thread.
-static void present_layers_task_cb(gpointer user_data) {
-  PresentLayersData* data = static_cast<PresentLayersData*>(user_data);
-  FlRenderer* self = data->self;
-
-  // Perform the present.
-  fl_opengl_manager_make_current(self->opengl_manager, EGL_NO_SURFACE);
-  data->result =
-      present_layers(self, data->view_id, data->layers, data->layers_count);
-  fl_opengl_manager_clear_current(self->opengl_manager);
-
-  // Complete fl_renderer_present_layers().
-  g_autoptr(GMutexLocker) locker = g_mutex_locker_new(&self->present_mutex);
-  data->finished = TRUE;
-  g_cond_signal(&self->present_condition);
-}
-
 static void fl_renderer_dispose(GObject* object) {
   FlRenderer* self = FL_RENDERER(object);
 
-  fl_renderer_unblock_main_thread(self);
-
   g_weak_ref_clear(&self->engine);
   g_clear_object(&self->opengl_manager);
-  g_clear_pointer(&self->framebuffers_by_view_id, g_hash_table_unref);
-  g_mutex_clear(&self->present_mutex);
-  g_cond_clear(&self->present_condition);
 
   G_OBJECT_CLASS(fl_renderer_parent_class)->dispose(object);
 }
@@ -450,13 +268,7 @@ static void fl_renderer_class_init(FlRendererClass* klass) {
   G_OBJECT_CLASS(klass)->dispose = fl_renderer_dispose;
 }
 
-static void fl_renderer_init(FlRenderer* self) {
-  self->framebuffers_by_view_id = g_hash_table_new_full(
-      g_direct_hash, g_direct_equal, nullptr,
-      reinterpret_cast<GDestroyNotify>(g_ptr_array_unref));
-  g_mutex_init(&self->present_mutex);
-  g_cond_init(&self->present_condition);
-}
+static void fl_renderer_init(FlRenderer* self) {}
 
 FlRenderer* fl_renderer_new(FlEngine* engine) {
   FlRenderer* self = FL_RENDERER(g_object_new(fl_renderer_get_type(), nullptr));
@@ -507,56 +319,41 @@ gboolean fl_renderer_collect_backing_store(
   return TRUE;
 }
 
-void fl_renderer_wait_for_frame(FlRenderer* self,
-                                int target_width,
-                                int target_height) {
-  g_return_if_fail(FL_IS_RENDERER(self));
-
-  self->target_width = target_width;
-  self->target_height = target_height;
-
-  if (self->had_first_frame && !self->blocking_main_thread) {
-    self->blocking_main_thread = true;
-    g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&self->engine));
-    if (engine != nullptr) {
-      fl_task_runner_block_main_thread(fl_engine_get_task_runner(engine));
-    }
-  }
-}
-
 gboolean fl_renderer_present_layers(FlRenderer* self,
                                     FlutterViewId view_id,
                                     const FlutterLayer** layers,
                                     size_t layers_count) {
-  // Detach the context from raster thread. Needed because blitting
-  // will be done on the main thread, which will make the context current.
-  fl_opengl_manager_clear_current(self->opengl_manager);
+  g_printerr("fl_renderer_present_layers thread=%p\n", g_thread_self());
+  g_return_val_if_fail(FL_IS_RENDERER(self), FALSE);
 
   g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&self->engine));
-
-  // Schedule the present to run on the main thread.
-  FlTaskRunner* task_runner = fl_engine_get_task_runner(engine);
-  PresentLayersData data = {
-      .self = self,
-      .view_id = view_id,
-      .layers = layers,
-      .layers_count = layers_count,
-      .result = FALSE,
-      .finished = FALSE,
-  };
-  fl_task_runner_post_callback(task_runner, present_layers_task_cb, &data);
-
-  // Block until present completes.
-  g_autoptr(GMutexLocker) locker = g_mutex_locker_new(&self->present_mutex);
-  while (!data.finished) {
-    g_cond_wait(&self->present_condition, &self->present_mutex);
+  if (engine == nullptr) {
+    return FALSE;
   }
 
-  // Restore the context to the raster thread in case the engine needs it
-  // to do some cleanup.
-  fl_opengl_manager_make_current(self->opengl_manager, EGL_NO_SURFACE);
+  g_autoptr(FlRenderable) renderable =
+      fl_engine_get_renderable(engine, view_id);
+  if (renderable == nullptr) {
+    return FALSE;
+  }
 
-  return data.result;
+  g_printerr("!!\n");
+  fl_renderable_make_current(renderable);
+  glClearColor(0.0, 1.0, 0.0, 1.0);
+  glClear(GL_COLOR_BUFFER_BIT);
+  fl_renderable_swap_buffers(renderable);
+
+  (void)render_with_blit;
+  (void)render_with_textures;
+#if 0   
+  if (self->has_gl_framebuffer_blit) {
+    render_with_blit(self, layers,layers_count);
+  } else {
+    render_with_textures(self, layers,layers_count, 100, 100); // FIXME
+  }
+#endif
+
+  return TRUE;
 }
 
 void fl_renderer_setup(FlRenderer* self) {
@@ -572,26 +369,6 @@ void fl_renderer_setup(FlRenderer* self) {
   if (!self->has_gl_framebuffer_blit) {
     setup_shader(self);
   }
-}
-
-void fl_renderer_render(FlRenderer* self,
-                        FlutterViewId view_id,
-                        int width,
-                        int height,
-                        const GdkRGBA* background_color) {
-  g_return_if_fail(FL_IS_RENDERER(self));
-
-  glClearColor(background_color->red, background_color->green,
-               background_color->blue, background_color->alpha);
-  glClear(GL_COLOR_BUFFER_BIT);
-
-  GPtrArray* framebuffers = reinterpret_cast<GPtrArray*>((g_hash_table_lookup(
-      self->framebuffers_by_view_id, GINT_TO_POINTER(view_id))));
-  if (framebuffers != nullptr) {
-    render(self, framebuffers, width, height);
-  }
-
-  glFlush();
 }
 
 void fl_renderer_cleanup(FlRenderer* self) {

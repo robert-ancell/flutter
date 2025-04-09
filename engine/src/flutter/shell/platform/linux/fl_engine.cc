@@ -303,11 +303,13 @@ static bool fl_engine_gl_present(void* user_data) {
   return true;
 }
 
+#if 0
 static bool fl_engine_gl_make_resource_current(void* user_data) {
   FlEngine* self = static_cast<FlEngine*>(user_data);
   fl_opengl_manager_make_resource_current(self->opengl_manager);
   return true;
 }
+#endif
 
 // Called by the engine to retrieve an external texture.
 static bool fl_engine_gl_external_texture_frame_callback(
@@ -622,7 +624,8 @@ gboolean fl_engine_start(FlEngine* self, GError** error) {
   config.open_gl.clear_current = fl_engine_gl_clear_current;
   config.open_gl.fbo_callback = fl_engine_gl_get_fbo;
   config.open_gl.present = fl_engine_gl_present;
-  config.open_gl.make_resource_current = fl_engine_gl_make_resource_current;
+  // FIXMEconfig.open_gl.make_resource_current =
+  // fl_engine_gl_make_resource_current;
   config.open_gl.gl_external_texture_frame_callback =
       fl_engine_gl_external_texture_frame_callback;
 

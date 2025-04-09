@@ -18,6 +18,7 @@
 #include "flutter/shell/platform/linux/fl_pointer_manager.h"
 #include "flutter/shell/platform/linux/fl_scrolling_manager.h"
 #include "flutter/shell/platform/linux/fl_socket_accessible.h"
+#include "flutter/shell/platform/linux/fl_subsurface.h"
 #include "flutter/shell/platform/linux/fl_touch_manager.h"
 #include "flutter/shell/platform/linux/fl_view_accessible.h"
 #include "flutter/shell/platform/linux/fl_view_private.h"
@@ -28,8 +29,11 @@
 struct _FlView {
   GtkBox parent_instance;
 
+  // Event box the render area goes inside.
+  GtkWidget* event_box;
+
   // The widget rendering the Flutter view.
-  GtkGLArea* gl_area;
+  FlSubsurface* render_area;
 
   // Engine this view is showing.
   FlEngine* engine;
@@ -45,9 +49,6 @@ struct _FlView {
 
   // Background color.
   GdkRGBA* background_color;
-
-  // TRUE if have got the first frame to render.
-  gboolean have_first_frame;
 
   // Monitor to track window state.
   FlWindowStateMonitor* window_state_monitor;
@@ -86,15 +87,6 @@ G_DEFINE_TYPE_WITH_CODE(
     G_IMPLEMENT_INTERFACE(fl_renderable_get_type(), fl_renderable_iface_init)
         G_IMPLEMENT_INTERFACE(fl_plugin_registry_get_type(),
                               fl_view_plugin_registry_iface_init))
-
-// Emit the first frame signal in the main thread.
-static gboolean first_frame_idle_cb(gpointer user_data) {
-  FlView* self = FL_VIEW(user_data);
-
-  g_signal_emit(self, fl_view_signals[SIGNAL_FIRST_FRAME], 0);
-
-  return FALSE;
-}
 
 // Signal handler for GtkWidget::delete-event
 static gboolean window_delete_event_cb(FlView* self) {
@@ -185,19 +177,6 @@ static void handle_geometry_changed(FlView* self) {
   fl_engine_send_window_metrics_event(
       self->engine, display_id, self->view_id, allocation.width * scale_factor,
       allocation.height * scale_factor, scale_factor);
-
-  // Make sure the view has been realized and its size has been allocated before
-  // waiting for a frame. `fl_view_realize()` and `fl_view_size_allocate()` may
-  // be called in either order depending on the order in which the window is
-  // shown and the view is added to a container in the app runner.
-  //
-  // Note: `gtk_widget_init()` initializes the size allocation to 1x1.
-  if (allocation.width > 1 && allocation.height > 1 &&
-      gtk_widget_get_realized(GTK_WIDGET(self))) {
-    fl_renderer_wait_for_frame(fl_engine_get_renderer(self->engine),
-                               allocation.width * scale_factor,
-                               allocation.height * scale_factor);
-  }
 }
 
 static void view_added_cb(GObject* object,
@@ -240,24 +219,16 @@ static void on_pre_engine_restart_cb(FlView* self) {
   init_touch(self);
 }
 
-// Implements FlRenderable::redraw
-static void fl_view_redraw(FlRenderable* renderable) {
-  FlView* self = FL_VIEW(renderable);
-
-  gtk_widget_queue_draw(GTK_WIDGET(self->gl_area));
-
-  if (!self->have_first_frame) {
-    self->have_first_frame = TRUE;
-    // This is not the main thread, so the signal needs to be done via an idle
-    // callback.
-    g_idle_add(first_frame_idle_cb, self);
-  }
-}
-
 // Implements FlRenderable::make_current
 static void fl_view_make_current(FlRenderable* renderable) {
   FlView* self = FL_VIEW(renderable);
-  gtk_gl_area_make_current(self->gl_area);
+  fl_subsurface_make_current(self->render_area);
+}
+
+// Implements FlRenderable::swap_buffers
+static void fl_view_swap_buffers(FlRenderable* renderable) {
+  FlView* self = FL_VIEW(renderable);
+  fl_subsurface_swap_buffers(self->render_area);
 }
 
 // Implements FlPluginRegistry::get_registrar_for_plugin.
@@ -272,8 +243,8 @@ static FlPluginRegistrar* fl_view_get_registrar_for_plugin(
 }
 
 static void fl_renderable_iface_init(FlRenderableInterface* iface) {
-  iface->redraw = fl_view_redraw;
   iface->make_current = fl_view_make_current;
+  iface->swap_buffers = fl_view_swap_buffers;
 }
 
 static void fl_view_plugin_registry_iface_init(
@@ -436,33 +407,9 @@ static void gesture_zoom_end_cb(FlView* self) {
   fl_scrolling_manager_handle_zoom_end(self->scrolling_manager);
 }
 
-static GdkGLContext* create_context_cb(FlView* self) {
-  init_scrolling(self);
-  init_touch(self);
-
-  FlOpenGLManager* opengl_manager = fl_engine_get_opengl_manager(self->engine);
-  g_autoptr(GError) error = nullptr;
-  if (!fl_opengl_manager_create_contexts(
-          opengl_manager, gtk_widget_get_parent_window(GTK_WIDGET(self)),
-          &error)) {
-    gtk_gl_area_set_error(self->gl_area, error);
-    return nullptr;
-  }
-
-  return GDK_GL_CONTEXT(
-      g_object_ref(fl_opengl_manager_get_context(opengl_manager)));
-}
-
 static void realize_cb(FlView* self) {
-  g_autoptr(GError) error = nullptr;
-
-  fl_opengl_manager_make_current(fl_engine_get_opengl_manager(self->engine));
-
-  GError* gl_error = gtk_gl_area_get_error(self->gl_area);
-  if (gl_error != NULL) {
-    g_warning("Failed to initialize GLArea: %s", gl_error->message);
-    return;
-  }
+  fl_opengl_manager_make_current(fl_engine_get_opengl_manager(self->engine),
+                                 EGL_NO_SURFACE);
 
   fl_renderer_setup(fl_engine_get_renderer(self->engine));
 
@@ -480,6 +427,7 @@ static void realize_cb(FlView* self) {
   // during initialization.
   fl_opengl_manager_clear_current(fl_engine_get_opengl_manager(self->engine));
 
+  g_autoptr(GError) error = nullptr;
   if (!fl_engine_start(self->engine, &error)) {
     g_warning("Failed to start Flutter engine: %s", error->message);
     return;
@@ -492,35 +440,6 @@ static void realize_cb(FlView* self) {
 
 static void secondary_realize_cb(FlView* self) {
   setup_cursor(self);
-}
-
-static gboolean render_cb(FlView* self, GdkGLContext* context) {
-  if (gtk_gl_area_get_error(self->gl_area) != NULL) {
-    return FALSE;
-  }
-
-  int width = gtk_widget_get_allocated_width(GTK_WIDGET(self->gl_area));
-  int height = gtk_widget_get_allocated_height(GTK_WIDGET(self->gl_area));
-  gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self->gl_area));
-  fl_renderer_render(fl_engine_get_renderer(self->engine), self->view_id,
-                     width * scale_factor, height * scale_factor,
-                     self->background_color);
-
-  return TRUE;
-}
-
-static void unrealize_cb(FlView* self) {
-  g_autoptr(GError) error = nullptr;
-
-  fl_opengl_manager_make_current(fl_engine_get_opengl_manager(self->engine));
-
-  GError* gl_error = gtk_gl_area_get_error(self->gl_area);
-  if (gl_error != NULL) {
-    g_warning("Failed to uninitialize GLArea: %s", gl_error->message);
-    return;
-  }
-
-  fl_renderer_cleanup(fl_engine_get_renderer(self->engine));
 }
 
 static void size_allocate_cb(FlView* self) {
@@ -587,7 +506,7 @@ static void fl_view_realize(GtkWidget* widget) {
   GTK_WIDGET_CLASS(fl_view_parent_class)->realize(widget);
 
   // Realize the child widgets.
-  gtk_widget_realize(GTK_WIDGET(self->gl_area));
+  gtk_widget_realize(GTK_WIDGET(self->render_area));
 }
 
 static gboolean handle_key_event(FlView* self, GdkEventKey* key_event) {
@@ -670,6 +589,21 @@ static void fl_view_class_init(FlViewClass* klass) {
 
 // Engine related construction.
 static void setup_engine(FlView* self) {
+  // FIXME: Handle error
+  fl_opengl_manager_create_contexts(fl_engine_get_opengl_manager(self->engine),
+                                    nullptr);
+
+  // FIXME: Make common
+  g_autoptr(FlWaylandDisplay) display =
+      fl_wayland_display_open(gtk_widget_get_display(GTK_WIDGET(self)));
+  self->render_area = fl_subsurface_new(
+      display);  //, fl_engine_get_opengl_manager(self->engine));
+  gtk_widget_show(GTK_WIDGET(self->render_area));
+  gtk_container_add(GTK_CONTAINER(self->event_box),
+                    GTK_WIDGET(self->render_area));
+  g_signal_connect_swapped(self->render_area, "realize", G_CALLBACK(realize_cb),
+                           self);
+
   self->view_accessible = fl_view_accessible_new(self->engine, self->view_id);
   fl_socket_accessible_embed(
       FL_SOCKET_ACCESSIBLE(gtk_widget_get_accessible(GTK_WIDGET(self))),
@@ -695,50 +629,43 @@ static void fl_view_init(FlView* self) {
       .red = 0.0, .green = 0.0, .blue = 0.0, .alpha = 1.0};
   self->background_color = gdk_rgba_copy(&default_background);
 
-  GtkWidget* event_box = gtk_event_box_new();
-  gtk_widget_set_hexpand(event_box, TRUE);
-  gtk_widget_set_vexpand(event_box, TRUE);
-  gtk_container_add(GTK_CONTAINER(self), event_box);
-  gtk_widget_show(event_box);
-  gtk_widget_add_events(event_box,
+  self->event_box = gtk_event_box_new();
+  gtk_widget_set_hexpand(self->event_box, TRUE);
+  gtk_widget_set_vexpand(self->event_box, TRUE);
+  gtk_container_add(GTK_CONTAINER(self), self->event_box);
+  gtk_widget_show(self->event_box);
+  gtk_widget_add_events(self->event_box,
                         GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK |
                             GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK |
                             GDK_SMOOTH_SCROLL_MASK | GDK_TOUCH_MASK);
 
-  g_signal_connect_swapped(event_box, "button-press-event",
+  g_signal_connect_swapped(self->event_box, "button-press-event",
                            G_CALLBACK(button_press_event_cb), self);
-  g_signal_connect_swapped(event_box, "button-release-event",
+  g_signal_connect_swapped(self->event_box, "button-release-event",
                            G_CALLBACK(button_release_event_cb), self);
-  g_signal_connect_swapped(event_box, "scroll-event",
+  g_signal_connect_swapped(self->event_box, "scroll-event",
                            G_CALLBACK(scroll_event_cb), self);
-  g_signal_connect_swapped(event_box, "motion-notify-event",
+  g_signal_connect_swapped(self->event_box, "motion-notify-event",
                            G_CALLBACK(motion_notify_event_cb), self);
-  g_signal_connect_swapped(event_box, "enter-notify-event",
+  g_signal_connect_swapped(self->event_box, "enter-notify-event",
                            G_CALLBACK(enter_notify_event_cb), self);
-  g_signal_connect_swapped(event_box, "leave-notify-event",
+  g_signal_connect_swapped(self->event_box, "leave-notify-event",
                            G_CALLBACK(leave_notify_event_cb), self);
-  GtkGesture* zoom = gtk_gesture_zoom_new(event_box);
+  GtkGesture* zoom = gtk_gesture_zoom_new(self->event_box);
   g_signal_connect_swapped(zoom, "begin", G_CALLBACK(gesture_zoom_begin_cb),
                            self);
   g_signal_connect_swapped(zoom, "scale-changed",
                            G_CALLBACK(gesture_zoom_update_cb), self);
   g_signal_connect_swapped(zoom, "end", G_CALLBACK(gesture_zoom_end_cb), self);
-  GtkGesture* rotate = gtk_gesture_rotate_new(event_box);
+  GtkGesture* rotate = gtk_gesture_rotate_new(self->event_box);
   g_signal_connect_swapped(rotate, "begin",
                            G_CALLBACK(gesture_rotation_begin_cb), self);
   g_signal_connect_swapped(rotate, "angle-changed",
                            G_CALLBACK(gesture_rotation_update_cb), self);
   g_signal_connect_swapped(rotate, "end", G_CALLBACK(gesture_rotation_end_cb),
                            self);
-  g_signal_connect_swapped(event_box, "touch-event", G_CALLBACK(touch_event_cb),
-                           self);
-
-  self->gl_area = GTK_GL_AREA(gtk_gl_area_new());
-  gtk_gl_area_set_has_alpha(self->gl_area, TRUE);
-  gtk_widget_show(GTK_WIDGET(self->gl_area));
-  gtk_container_add(GTK_CONTAINER(event_box), GTK_WIDGET(self->gl_area));
-  g_signal_connect_swapped(self->gl_area, "render", G_CALLBACK(render_cb),
-                           self);
+  g_signal_connect_swapped(self->event_box, "touch-event",
+                           G_CALLBACK(touch_event_cb), self);
 
   g_signal_connect_swapped(self, "size-allocate", G_CALLBACK(size_allocate_cb),
                            self);
@@ -752,13 +679,6 @@ G_MODULE_EXPORT FlView* fl_view_new(FlDartProject* project) {
   self->engine = FL_ENGINE(g_object_ref(engine));
 
   setup_engine(self);
-
-  g_signal_connect_swapped(self->gl_area, "create-context",
-                           G_CALLBACK(create_context_cb), self);
-  g_signal_connect_swapped(self->gl_area, "realize", G_CALLBACK(realize_cb),
-                           self);
-  g_signal_connect_swapped(self->gl_area, "unrealize", G_CALLBACK(unrealize_cb),
-                           self);
 
   fl_engine_set_implicit_view(engine, FL_RENDERABLE(self));
 
@@ -775,7 +695,7 @@ G_MODULE_EXPORT FlView* fl_view_new_for_engine(FlEngine* engine) {
 
   setup_engine(self);
 
-  g_signal_connect_swapped(self->gl_area, "realize",
+  g_signal_connect_swapped(self->render_area, "realize",
                            G_CALLBACK(secondary_realize_cb), self);
   return self;
 }

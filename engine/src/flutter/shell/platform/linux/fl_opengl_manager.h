@@ -5,7 +5,8 @@
 #ifndef FLUTTER_SHELL_PLATFORM_LINUX_FL_OPENGL_MANAGER_H_
 #define FLUTTER_SHELL_PLATFORM_LINUX_FL_OPENGL_MANAGER_H_
 
-#include <gtk/gtk.h>
+#include <epoxy/egl.h>
+#include <glib-object.h>
 
 G_BEGIN_DECLS
 
@@ -36,24 +37,17 @@ FlOpenGLManager* fl_opengl_manager_new();
  * Returns: %TRUE if contexts were created, %FALSE if there was an error.
  */
 gboolean fl_opengl_manager_create_contexts(FlOpenGLManager* manager,
-                                           GdkWindow* window,
                                            GError** error);
-
-/**
- * fl_opengl_manager_get_context:
- * @manager: an #FlOpenGLManager.
- *
- * Returns: the main context used for rendering.
- */
-GdkGLContext* fl_opengl_manager_get_context(FlOpenGLManager* manager);
 
 /**
  * fl_opengl_manager_make_current:
  * @manager: an #FlOpenGLManager.
+ * @surface: surface to render to.
  *
  * Makes the rendering context current.
  */
-void fl_opengl_manager_make_current(FlOpenGLManager* manager);
+void fl_opengl_manager_make_current(FlOpenGLManager* manager,
+                                    EGLSurface surface);
 
 /**
  * fl_opengl_manager_make_resource_current:
@@ -70,6 +64,14 @@ void fl_opengl_manager_make_resource_current(FlOpenGLManager* manager);
  * Clears the current rendering context.
  */
 void fl_opengl_manager_clear_current(FlOpenGLManager* manager);
+
+// FIXME
+EGLSurface fl_opengl_manager_create_window_surface(FlOpenGLManager* manager,
+                                                   EGLNativeWindowType window);
+
+// FIXME
+void fl_opengl_manager_swap_buffers(FlOpenGLManager* manager,
+                                    EGLSurface surface);
 
 G_END_DECLS
 

@@ -25,18 +25,9 @@ G_DECLARE_INTERFACE(FlRenderable, fl_renderable, FL, RENDERABLE, GObject);
 struct _FlRenderableInterface {
   GTypeInterface g_iface;
 
-  void (*redraw)(FlRenderable* renderable);
   void (*make_current)(FlRenderable* renderable);
+  void (*swap_buffers)(FlRenderable* renderable);
 };
-
-/**
- * fl_renderable_redraw:
- * @renderable: an #FlRenderable
- *
- * Indicate the renderable needs to redraw. When ready, the renderable should
- * call fl_renderer_draw().
- */
-void fl_renderable_redraw(FlRenderable* renderable);
 
 /**
  * fl_renderable_make_current:
@@ -45,6 +36,14 @@ void fl_renderable_redraw(FlRenderable* renderable);
  * Make this renderable the current OpenGL context.
  */
 void fl_renderable_make_current(FlRenderable* renderable);
+
+/**
+ * fl_renderable_swap_buffers:
+ * @renderable: an #FlRenderable
+ *
+ * FIXME
+ */
+void fl_renderable_swap_buffers(FlRenderable* renderable);
 
 G_END_DECLS
 

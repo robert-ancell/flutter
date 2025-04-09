@@ -399,8 +399,6 @@ static gboolean present_layers(FlRenderer* self,
                         g_ptr_array_ref(secondary_framebuffers));
   }
 
-  fl_renderable_redraw(renderable);
-
   return TRUE;
 }
 
@@ -423,7 +421,7 @@ static void present_layers_task_cb(gpointer user_data) {
   FlRenderer* self = data->self;
 
   // Perform the present.
-  fl_opengl_manager_make_current(self->opengl_manager);
+  fl_opengl_manager_make_current(self->opengl_manager, EGL_NO_SURFACE);
   data->result =
       present_layers(self, data->view_id, data->layers, data->layers_count);
   fl_opengl_manager_clear_current(self->opengl_manager);
@@ -474,7 +472,7 @@ gboolean fl_renderer_create_backing_store(
     FlRenderer* self,
     const FlutterBackingStoreConfig* config,
     FlutterBackingStore* backing_store_out) {
-  fl_opengl_manager_make_current(self->opengl_manager);
+  fl_opengl_manager_make_current(self->opengl_manager, EGL_NO_SURFACE);
 
   initialize(self);
 
@@ -502,7 +500,7 @@ gboolean fl_renderer_create_backing_store(
 gboolean fl_renderer_collect_backing_store(
     FlRenderer* self,
     const FlutterBackingStore* backing_store) {
-  fl_opengl_manager_make_current(self->opengl_manager);
+  fl_opengl_manager_make_current(self->opengl_manager, EGL_NO_SURFACE);
 
   // OpenGL context is required when destroying #FlFramebuffer.
   g_object_unref(backing_store->open_gl.framebuffer.user_data);
@@ -556,7 +554,7 @@ gboolean fl_renderer_present_layers(FlRenderer* self,
 
   // Restore the context to the raster thread in case the engine needs it
   // to do some cleanup.
-  fl_opengl_manager_make_current(self->opengl_manager);
+  fl_opengl_manager_make_current(self->opengl_manager, EGL_NO_SURFACE);
 
   return data.result;
 }

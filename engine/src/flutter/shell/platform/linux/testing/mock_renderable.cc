@@ -17,15 +17,9 @@ G_DEFINE_TYPE_WITH_CODE(FlMockRenderable,
                         G_IMPLEMENT_INTERFACE(fl_renderable_get_type(),
                                               mock_renderable_iface_init))
 
-static void mock_renderable_redraw(FlRenderable* renderable) {
-  FlMockRenderable* self = FL_MOCK_RENDERABLE(renderable);
-  self->redraw_count++;
-}
-
 static void mock_renderable_make_current(FlRenderable* renderable) {}
 
 static void mock_renderable_iface_init(FlRenderableInterface* iface) {
-  iface->redraw = mock_renderable_redraw;
   iface->make_current = mock_renderable_make_current;
 }
 

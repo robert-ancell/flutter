@@ -408,8 +408,8 @@ static void gesture_zoom_end_cb(FlView* self) {
 }
 
 static void realize_cb(FlView* self) {
-  fl_opengl_manager_make_current(fl_engine_get_opengl_manager(self->engine),
-                                 EGL_NO_SURFACE);
+  fl_opengl_manager_make_render_current(
+      fl_engine_get_opengl_manager(self->engine));
 
   fl_renderer_setup(fl_engine_get_renderer(self->engine));
 

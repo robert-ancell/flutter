@@ -40,14 +40,12 @@ gboolean fl_opengl_manager_create_contexts(FlOpenGLManager* manager,
                                            GError** error);
 
 /**
- * fl_opengl_manager_make_current:
+ * fl_opengl_manager_make_render_current:
  * @manager: an #FlOpenGLManager.
- * @surface: surface to render to.
  *
  * Makes the rendering context current.
  */
-void fl_opengl_manager_make_current(FlOpenGLManager* manager,
-                                    EGLSurface surface);
+void fl_opengl_manager_make_render_current(FlOpenGLManager* manager);
 
 /**
  * fl_opengl_manager_make_resource_current:
@@ -56,6 +54,18 @@ void fl_opengl_manager_make_current(FlOpenGLManager* manager,
  * Makes the resource rendering context current.
  */
 void fl_opengl_manager_make_resource_current(FlOpenGLManager* manager);
+
+/**
+ * fl_opengl_manager_make_current:
+ * @manager: an #FlOpenGLManager.
+ * @context: context to make current.
+ * @surface: surface to render to.
+ *
+ * Makes the rendering context current.
+ */
+void fl_opengl_manager_make_current(FlOpenGLManager* manager,
+                                    EGLContext context,
+                                    EGLSurface surface);
 
 /**
  * fl_opengl_manager_clear_current:
@@ -73,9 +83,7 @@ EGLSurface fl_opengl_manager_create_window_surface(FlOpenGLManager* manager,
 void fl_opengl_manager_swap_buffers(FlOpenGLManager* manager,
                                     EGLSurface surface);
 
-EGLDisplay fl_opengl_manager_get_display(FlOpenGLManager* manager);
-
-EGLConfig fl_opengl_manager_get_config(FlOpenGLManager* manager);
+EGLContext fl_opengl_manager_create_context(FlOpenGLManager* manager);
 
 G_END_DECLS
 

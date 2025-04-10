@@ -282,7 +282,7 @@ static void* fl_engine_gl_proc_resolver(void* user_data, const char* name) {
 
 static bool fl_engine_gl_make_current(void* user_data) {
   FlEngine* self = static_cast<FlEngine*>(user_data);
-  fl_opengl_manager_make_current(self->opengl_manager, EGL_NO_SURFACE);
+  fl_opengl_manager_make_render_current(self->opengl_manager);
   return true;
 }
 

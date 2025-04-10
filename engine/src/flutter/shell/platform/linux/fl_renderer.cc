@@ -284,7 +284,7 @@ gboolean fl_renderer_create_backing_store(
     FlRenderer* self,
     const FlutterBackingStoreConfig* config,
     FlutterBackingStore* backing_store_out) {
-  fl_opengl_manager_make_current(self->opengl_manager, EGL_NO_SURFACE);
+  fl_opengl_manager_make_render_current(self->opengl_manager);
 
   initialize(self);
 
@@ -312,7 +312,7 @@ gboolean fl_renderer_create_backing_store(
 gboolean fl_renderer_collect_backing_store(
     FlRenderer* self,
     const FlutterBackingStore* backing_store) {
-  fl_opengl_manager_make_current(self->opengl_manager, EGL_NO_SURFACE);
+  fl_opengl_manager_make_render_current(self->opengl_manager);
 
   // OpenGL context is required when destroying #FlFramebuffer.
   g_object_unref(backing_store->open_gl.framebuffer.user_data);

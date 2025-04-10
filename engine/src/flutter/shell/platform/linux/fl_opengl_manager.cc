@@ -72,12 +72,13 @@ gboolean fl_opengl_manager_create_contexts(FlOpenGLManager* self,
   return TRUE;
 }
 
-void fl_opengl_manager_make_current(FlOpenGLManager* self, EGLSurface surface) {
+void fl_opengl_manager_make_render_current(FlOpenGLManager* self) {
   g_return_if_fail(FL_IS_OPENGL_MANAGER(self));
 
-  g_printerr("fl_opengl_manager_make_current thread=%p surface=%p\n",
-             g_thread_self(), surface);
-  eglMakeCurrent(self->egl_display, surface, surface, self->render_context);
+  g_printerr("fl_opengl_manager_make_render_current thread=%p\n",
+             g_thread_self());
+  eglMakeCurrent(self->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE,
+                 self->render_context);
 }
 
 void fl_opengl_manager_make_resource_current(FlOpenGLManager* self) {
@@ -87,6 +88,16 @@ void fl_opengl_manager_make_resource_current(FlOpenGLManager* self) {
              g_thread_self());
   eglMakeCurrent(self->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE,
                  self->resource_context);
+}
+
+void fl_opengl_manager_make_current(FlOpenGLManager* self,
+                                    EGLContext context,
+                                    EGLSurface surface) {
+  g_return_if_fail(FL_IS_OPENGL_MANAGER(self));
+
+  g_printerr("fl_opengl_manager_make_current thread=%p surface=%p\n",
+             g_thread_self(), surface);
+  eglMakeCurrent(self->egl_display, surface, surface, self->resource_context);
 }
 
 void fl_opengl_manager_clear_current(FlOpenGLManager* self) {
@@ -119,7 +130,8 @@ EGLDisplay fl_opengl_manager_get_display(FlOpenGLManager* self) {
   return self->egl_display;
 }
 
-EGLDisplay fl_opengl_manager_get_config(FlOpenGLManager* self) {
+EGLContext fl_opengl_manager_create_context(FlOpenGLManager* self) {
   g_return_val_if_fail(FL_IS_OPENGL_MANAGER(self), nullptr);
-  return self->egl_config;
+  return eglCreateContext(self->egl_display, self->egl_config,
+                          self->render_context, nullptr);
 }

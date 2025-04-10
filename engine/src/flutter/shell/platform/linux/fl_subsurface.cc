@@ -55,13 +55,7 @@ static void fl_subsurface_realize(GtkWidget* widget) {
   self->egl_window =
       wl_egl_window_create(self->surface, allocation.width, allocation.height);
 
-  eglBindAPI(EGL_OPENGL_API);
-  eglInitialize(fl_opengl_manager_get_display(self->opengl_manager), NULL,
-                NULL);
-  EGLConfig egl_config = fl_opengl_manager_get_config(self->opengl_manager);
-  self->egl_context =
-      eglCreateContext(fl_opengl_manager_get_display(self->opengl_manager),
-                       egl_config, EGL_NO_CONTEXT, NULL);
+  self->egl_context = fl_opengl_manager_create_context(self->opengl_manager);
   self->egl_surface = fl_opengl_manager_create_window_surface(
       self->opengl_manager,
       reinterpret_cast<EGLNativeWindowType>(self->egl_window));
@@ -121,9 +115,8 @@ FlSubsurface* fl_subsurface_new(FlWaylandDisplay* display,
 
 void fl_subsurface_make_current(FlSubsurface* self) {
   g_return_if_fail(FL_IS_SUBSURFACE(self));
-
-  eglMakeCurrent(fl_opengl_manager_get_display(self->opengl_manager),
-                 self->egl_surface, self->egl_surface, self->egl_context);
+  fl_opengl_manager_make_current(self->opengl_manager, self->egl_context,
+                                 self->egl_surface);
 }
 
 void fl_subsurface_swap_buffers(FlSubsurface* self) {

@@ -73,6 +73,10 @@ EGLSurface fl_opengl_manager_create_window_surface(FlOpenGLManager* manager,
 void fl_opengl_manager_swap_buffers(FlOpenGLManager* manager,
                                     EGLSurface surface);
 
+EGLDisplay fl_opengl_manager_get_display(FlOpenGLManager* manager);
+
+EGLConfig fl_opengl_manager_get_config(FlOpenGLManager* manager);
+
 G_END_DECLS
 
 #endif  // FLUTTER_SHELL_PLATFORM_LINUX_FL_OPENGL_MANAGER_H_

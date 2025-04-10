@@ -56,26 +56,18 @@ static void fl_subsurface_realize(GtkWidget* widget) {
   gtk_widget_get_allocation(widget, &allocation);
   self->egl_window =
       wl_egl_window_create(self->surface, allocation.width, allocation.height);
-  struct wl_display* display = gdk_wayland_display_get_wl_display(
-      fl_wayland_display_get_display(self->display));
-  self->egl_display =
-      eglGetDisplay(reinterpret_cast<EGLNativeDisplayType>(display));
+  self->egl_display = fl_opengl_manager_get_display(self->opengl_manager);
 
   eglBindAPI(EGL_OPENGL_API);
   eglInitialize(self->egl_display, NULL, NULL);
-  EGLint attributes[] = {EGL_RED_SIZE,   8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8,
-                         EGL_ALPHA_SIZE, 8, EGL_NONE};
-  EGLConfig egl_config;
-  EGLint num_config;
-  eglChooseConfig(self->egl_display, attributes, &egl_config, 1,
-                  &num_config);  // FIXME: num_config
+  EGLConfig egl_config = fl_opengl_manager_get_config(self->opengl_manager);
   self->egl_context =
       eglCreateContext(self->egl_display, egl_config, EGL_NO_CONTEXT, NULL);
   self->egl_shared_context =
       eglCreateContext(self->egl_display, egl_config, self->egl_context, NULL);
-  self->egl_surface = eglCreateWindowSurface(
-      self->egl_display, egl_config,
-      reinterpret_cast<EGLNativeWindowType>(self->egl_window), NULL);
+  self->egl_surface = fl_opengl_manager_create_window_surface(
+      self->opengl_manager,
+      reinterpret_cast<EGLNativeWindowType>(self->egl_window));
 }
 
 static void fl_subsurface_unrealize(GtkWidget* widget) {
@@ -139,6 +131,5 @@ void fl_subsurface_make_current(FlSubsurface* self) {
 
 void fl_subsurface_swap_buffers(FlSubsurface* self) {
   g_return_if_fail(FL_IS_SUBSURFACE(self));
-  eglSwapInterval(self->egl_display, 0);
-  eglSwapBuffers(self->egl_display, self->egl_surface);
+  fl_opengl_manager_swap_buffers(self->opengl_manager, self->egl_surface);
 }

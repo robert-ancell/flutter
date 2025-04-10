@@ -113,3 +113,13 @@ void fl_opengl_manager_swap_buffers(FlOpenGLManager* self, EGLSurface surface) {
   eglSwapInterval(self->egl_display, 0);  // FIXME?
   eglSwapBuffers(self->egl_display, surface);
 }
+
+EGLDisplay fl_opengl_manager_get_display(FlOpenGLManager* self) {
+  g_return_val_if_fail(FL_IS_OPENGL_MANAGER(self), EGL_NO_DISPLAY);
+  return self->egl_display;
+}
+
+EGLDisplay fl_opengl_manager_get_config(FlOpenGLManager* self) {
+  g_return_val_if_fail(FL_IS_OPENGL_MANAGER(self), nullptr);
+  return self->egl_config;
+}

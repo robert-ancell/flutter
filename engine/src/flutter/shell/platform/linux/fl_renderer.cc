@@ -337,7 +337,6 @@ gboolean fl_renderer_present_layers(FlRenderer* self,
     return FALSE;
   }
 
-  g_printerr("!!\n");
   fl_renderable_make_current(renderable);
   glClearColor(0.0, 1.0, 0.0, 1.0);
   glClear(GL_COLOR_BUFFER_BIT);

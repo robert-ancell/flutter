@@ -46,6 +46,9 @@ static void fl_subsurface_realize(GtkWidget* widget) {
   struct wl_compositor* compositor = gdk_wayland_display_get_wl_compositor(
       fl_wayland_display_get_display(self->display));
   self->surface = wl_compositor_create_surface(compositor);
+  // FIXME: Handle this changing later
+  gint scale_factor = gtk_widget_get_scale_factor(widget);
+  wl_surface_set_buffer_scale(self->surface, scale_factor);
   self->subsurface = wl_subcompositor_get_subsurface(
       fl_wayland_display_get_wl_subcompositor(self->display), self->surface,
       parent_surface);
@@ -53,7 +56,8 @@ static void fl_subsurface_realize(GtkWidget* widget) {
   GtkAllocation allocation;
   gtk_widget_get_allocation(widget, &allocation);
   self->egl_window =
-      wl_egl_window_create(self->surface, allocation.width, allocation.height);
+      wl_egl_window_create(self->surface, allocation.width * scale_factor,
+                           allocation.height * scale_factor);
 
   self->egl_context = fl_opengl_manager_create_context(self->opengl_manager);
   self->egl_surface = fl_opengl_manager_create_window_surface(
@@ -80,8 +84,9 @@ static void fl_subsurface_size_allocate(GtkWidget* widget,
   // to work out how to get this.
   wl_subsurface_set_position(self->subsurface, 26,
                              70);  // allocation->x, allocation->y);
-  wl_egl_window_resize(self->egl_window, allocation->width, allocation->height,
-                       0, 0);
+  gint scale_factor = gtk_widget_get_scale_factor(widget);
+  wl_egl_window_resize(self->egl_window, allocation->width * scale_factor,
+                       allocation->height * scale_factor, 0, 0);
 
   g_signal_emit(self, fl_subsurface_signals[SIGNAL_RESIZE], 0);
 }

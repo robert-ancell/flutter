@@ -17,7 +17,6 @@ struct _FlSubsurface {
   struct wl_egl_window* egl_window;
   EGLDisplay egl_display;
   EGLContext egl_context;
-  EGLContext egl_shared_context;
   EGLSurface egl_surface;
 };
 
@@ -63,8 +62,6 @@ static void fl_subsurface_realize(GtkWidget* widget) {
   EGLConfig egl_config = fl_opengl_manager_get_config(self->opengl_manager);
   self->egl_context =
       eglCreateContext(self->egl_display, egl_config, EGL_NO_CONTEXT, NULL);
-  self->egl_shared_context =
-      eglCreateContext(self->egl_display, egl_config, self->egl_context, NULL);
   self->egl_surface = fl_opengl_manager_create_window_surface(
       self->opengl_manager,
       reinterpret_cast<EGLNativeWindowType>(self->egl_window));

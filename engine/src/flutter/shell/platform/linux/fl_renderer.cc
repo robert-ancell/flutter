@@ -341,6 +341,27 @@ gboolean fl_renderer_present_layers(FlRenderer* self,
   fl_renderable_make_current(renderable);
   glClearColor(0.0, 1.0, 0.0, 1.0);
   glClear(GL_COLOR_BUFFER_BIT);
+
+  for (size_t i = 0; i < layers_count; i++) {
+    const FlutterLayer* layer = layers[i];
+    if (layer->type != kFlutterLayerContentTypeBackingStore) {
+      continue;
+    }
+    const FlutterBackingStore* backing_store = layers[i]->backing_store;
+    if (backing_store->type != kFlutterBackingStoreTypeOpenGL) {
+      continue;
+    }
+
+    FlFramebuffer* framebuffer =
+        FL_FRAMEBUFFER(backing_store->open_gl.framebuffer.user_data);
+    GLuint framebuffer_id = fl_framebuffer_get_id(framebuffer);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_id);
+    glBlitFramebuffer(layer->offset.x, layer->offset.y, layer->size.width,
+                      layer->size.height, layer->offset.x, layer->offset.y,
+                      layer->size.width, layer->size.height,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+  }
+
   fl_renderable_swap_buffers(renderable);
 
   (void)render_with_blit;

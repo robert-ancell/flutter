@@ -52,6 +52,7 @@ static void fl_subsurface_realize(GtkWidget* widget) {
   self->subsurface = wl_subcompositor_get_subsurface(
       fl_wayland_display_get_wl_subcompositor(self->display), self->surface,
       parent_surface);
+  wl_subsurface_set_desync(self->subsurface);
 
   GtkAllocation allocation;
   gtk_widget_get_allocation(widget, &allocation);

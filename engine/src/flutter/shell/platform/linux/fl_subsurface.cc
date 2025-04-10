@@ -10,6 +10,8 @@ struct _FlSubsurface {
 
   FlWaylandDisplay* display;
 
+  FlOpenGLManager* opengl_manager;
+
   struct wl_surface* surface;
   struct wl_subsurface* subsurface;
   struct wl_egl_window* egl_window;
@@ -29,6 +31,7 @@ static void fl_subsurface_dispose(GObject* object) {
   FlSubsurface* self = FL_SUBSURFACE(object);
 
   g_clear_object(&self->display);
+  g_clear_object(&self->opengl_manager);
 
   G_OBJECT_CLASS(fl_subsurface_parent_class)->dispose(object);
 }
@@ -116,11 +119,13 @@ static void fl_subsurface_init(FlSubsurface* self) {
   gtk_widget_set_has_window(GTK_WIDGET(self), FALSE);
 }
 
-FlSubsurface* fl_subsurface_new(FlWaylandDisplay* display) {
+FlSubsurface* fl_subsurface_new(FlWaylandDisplay* display,
+                                FlOpenGLManager* opengl_manager) {
   FlSubsurface* self =
       FL_SUBSURFACE(g_object_new(fl_subsurface_get_type(), NULL));
 
   self->display = FL_WAYLAND_DISPLAY(g_object_ref(display));
+  self->opengl_manager = FL_OPENGL_MANAGER(g_object_ref(opengl_manager));
 
   return self;
 }

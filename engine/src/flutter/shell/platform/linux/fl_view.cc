@@ -596,8 +596,8 @@ static void setup_engine(FlView* self) {
   // FIXME: Make common
   g_autoptr(FlWaylandDisplay) display =
       fl_wayland_display_open(gtk_widget_get_display(GTK_WIDGET(self)));
-  self->render_area = fl_subsurface_new(
-      display);  //, fl_engine_get_opengl_manager(self->engine));
+  self->render_area =
+      fl_subsurface_new(display, fl_engine_get_opengl_manager(self->engine));
   gtk_widget_show(GTK_WIDGET(self->render_area));
   gtk_container_add(GTK_CONTAINER(self->event_box),
                     GTK_WIDGET(self->render_area));

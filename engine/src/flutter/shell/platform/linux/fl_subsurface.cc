@@ -45,7 +45,14 @@ static void fl_subsurface_realize(GtkWidget* widget) {
 
   struct wl_compositor* compositor = gdk_wayland_display_get_wl_compositor(
       fl_wayland_display_get_display(self->display));
+
   self->surface = wl_compositor_create_surface(compositor);
+
+  // Don't get input.
+  struct wl_region* empty_region = wl_compositor_create_region(compositor);
+  wl_surface_set_input_region(self->surface, empty_region);
+  wl_region_destroy(empty_region);
+
   // FIXME: Handle this changing later
   gint scale_factor = gtk_widget_get_scale_factor(widget);
   wl_surface_set_buffer_scale(self->surface, scale_factor);

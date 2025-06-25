@@ -706,6 +706,11 @@ G_MODULE_EXPORT FlEngine* fl_engine_new_headless(FlDartProject* project) {
   return fl_engine_new(project);
 }
 
+FlutterRendererType fl_engine_get_renderer_type(FlEngine* self) {
+  g_return_val_if_fail(FL_IS_ENGINE(self), static_cast<FlutterRendererType>(0));
+  return self->renderer_type;
+}
+
 FlOpenGLManager* fl_engine_get_opengl_manager(FlEngine* self) {
   g_return_val_if_fail(FL_IS_ENGINE(self), nullptr);
   return self->opengl_manager;

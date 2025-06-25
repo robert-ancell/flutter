@@ -246,6 +246,12 @@ static void on_pre_engine_restart_cb(FlView* self) {
   init_touch(self);
 }
 
+static void present_opengl(FlView* self,
+                           const FlutterLayer** layers,
+                           size_t layers_count) {
+  // FIXME
+}
+
 static void present_software(FlView* self,
                              const FlutterLayer** layers,
                              size_t layers_count) {
@@ -292,8 +298,16 @@ static void fl_view_present(FlRenderable* renderable,
                             size_t layers_count) {
   FlView* self = FL_VIEW(renderable);
 
-  // FIXME: OpenGL
-  present_software(self, layers, layers_count);
+  switch (fl_engine_get_renderer_type(self->engine)) {
+    case kOpenGL:
+      present_opengl(self, layers, layers_count);
+      break;
+    case kSoftware:
+      present_software(self, layers, layers_count);
+      break;
+    default:
+      break;
+  }
 
   gtk_widget_queue_draw(GTK_WIDGET(self->render_area));
 
@@ -527,6 +541,10 @@ static void render_area_size_allocate_cb(FlView* self,
   cairo_surface_set_device_scale(self->surface, scale_factor, scale_factor);
 }
 
+static void draw_opengl(FlView* self, cairo_t* cr) {
+  // FIXME
+}
+
 static void draw_software(FlView* self, cairo_t* cr) {
   if (self->surface == nullptr) {
     return;
@@ -545,8 +563,16 @@ static gboolean draw_cb(FlView* self, cairo_t* cr) {
     cairo_paint(cr);
   }
 
-  // FIXME: OpenGL
-  draw_software(self, cr);
+  switch (fl_engine_get_renderer_type(self->engine)) {
+    case kOpenGL:
+      draw_opengl(self, cr);
+      break;
+    case kSoftware:
+      draw_software(self, cr);
+      break;
+    default:
+      break;
+  }
 
   return TRUE;
 }

@@ -64,6 +64,16 @@ FlEngine* fl_engine_new_with_binary_messenger(
     FlBinaryMessenger* binary_messenger);
 
 /**
+ * fl_engine_get_renderer_type:
+ * @engine: an #FlEngine.
+ *
+ * Gets the rendering type used by this engine.
+ *
+ * Returns: type of rendering used.
+ */
+FlutterRendererType fl_engine_get_renderer_type(FlEngine* engine);
+
+/**
  * fl_engine_get_opengl_manager:
  * @engine: an #FlEngine.
  *

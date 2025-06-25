@@ -199,10 +199,8 @@ static void handle_geometry_changed(FlView* self) {
   //
   // Note: `gtk_widget_init()` initializes the size allocation to 1x1.
   if (allocation.width > 1 && allocation.height > 1 &&
-      gtk_widget_get_realized(GTK_WIDGET(self))) {
-    // fl_compositor_wait_for_frame(fl_engine_get_compositor(self->engine),
-    //                              allocation.width * scale_factor,
-    //                              allocation.height * scale_factor);
+      gtk_widget_get_realized(GTK_WIDGET(self)) && self->have_first_frame) {
+    fl_task_runner_block_main_thread(fl_engine_get_task_runner(self->engine));
   }
 }
 
@@ -308,6 +306,9 @@ static void fl_view_present(FlRenderable* renderable,
     default:
       break;
   }
+
+  // FIXME: Warns if wasn't blocking in the first place
+  fl_task_runner_release_main_thread(fl_engine_get_task_runner(self->engine));
 
   gtk_widget_queue_draw(GTK_WIDGET(self->render_area));
 

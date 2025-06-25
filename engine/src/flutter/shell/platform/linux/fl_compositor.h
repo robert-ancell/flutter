@@ -27,11 +27,6 @@ struct _FlCompositorClass {
   gboolean (*collect_backing_store)(FlCompositor* compositor,
                                     const FlutterBackingStore* backing_store);
 
-  gboolean (*present_layers)(FlCompositor* compositor,
-                             FlutterViewId view_id,
-                             const FlutterLayer** layers,
-                             size_t layers_count);
-
   void (*wait_for_frame)(FlCompositor* compositor,
                          int target_width,
                          int target_height);
@@ -89,23 +84,6 @@ gboolean fl_compositor_create_backing_store(
 gboolean fl_compositor_collect_backing_store(
     FlCompositor* compositor,
     const FlutterBackingStore* backing_store);
-
-/**
- * fl_compositor_present_layers:
- * @compositor: an #FlCompositor.
- * @view_id: view to present.
- * @layers: layers to be composited.
- * @layers_count: number of layers.
- *
- * Callback invoked by the engine to composite the contents of each layer
- * onto the screen.
- *
- * Returns %TRUE if successful.
- */
-gboolean fl_compositor_present_layers(FlCompositor* compositor,
-                                      FlutterViewId view_id,
-                                      const FlutterLayer** layers,
-                                      size_t layers_count);
 
 /**
  * fl_compositor_wait_for_frame:

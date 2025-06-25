@@ -25,18 +25,23 @@ G_DECLARE_INTERFACE(FlRenderable, fl_renderable, FL, RENDERABLE, GObject);
 struct _FlRenderableInterface {
   GTypeInterface g_iface;
 
-  void (*redraw)(FlRenderable* renderable);
+  void (*present)(FlRenderable* renderable,
+                  const FlutterLayer** layers,
+                  size_t layers_count);
   void (*make_current)(FlRenderable* renderable);
 };
 
 /**
- * fl_renderable_redraw:
+ * fl_renderable_present:
  * @renderable: an #FlRenderable
+ * @layers: layers to draw.
+ * @layers_count: number of layers.
  *
- * Indicate the renderable needs to redraw. When ready, the renderable should
- * call fl_compositor_draw().
+ * Present a frame.
  */
-void fl_renderable_redraw(FlRenderable* renderable);
+void fl_renderable_present(FlRenderable* renderable,
+                           const FlutterLayer** layers,
+                           size_t layers_count);
 
 /**
  * fl_renderable_make_current:

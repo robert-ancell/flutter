@@ -51,7 +51,7 @@ TEST(FlViewTest, FirstFrameSignal) {
 
   EXPECT_FALSE(first_frame_emitted);
 
-  fl_renderable_redraw(FL_RENDERABLE(view));
+  // FIXME: present fl_renderable_redraw(FL_RENDERABLE(view));
 
   // Signal is emitted in idle, clear the main loop.
   while (g_main_context_iteration(g_main_context_default(), FALSE)) {

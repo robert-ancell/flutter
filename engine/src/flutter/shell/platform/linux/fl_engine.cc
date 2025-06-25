@@ -13,11 +13,10 @@
 #include "flutter/shell/platform/common/engine_switches.h"
 #include "flutter/shell/platform/embedder/embedder.h"
 #include "flutter/shell/platform/linux/fl_binary_messenger_private.h"
-#include "flutter/shell/platform/linux/fl_compositor_opengl.h"
-#include "flutter/shell/platform/linux/fl_compositor_software.h"
 #include "flutter/shell/platform/linux/fl_dart_project_private.h"
 #include "flutter/shell/platform/linux/fl_display_monitor.h"
 #include "flutter/shell/platform/linux/fl_engine_private.h"
+#include "flutter/shell/platform/linux/fl_framebuffer.h"
 #include "flutter/shell/platform/linux/fl_keyboard_handler.h"
 #include "flutter/shell/platform/linux/fl_opengl_manager.h"
 #include "flutter/shell/platform/linux/fl_pixel_buffer_texture_private.h"
@@ -49,8 +48,8 @@ struct _FlEngine {
   // Watches for monitors changes to update engine.
   FlDisplayMonitor* display_monitor;
 
-  // Renders the Flutter app.
-  FlCompositor* compositor;
+  // Type of renderer.
+  FlutterRendererType renderer_type;
 
   // Manages OpenGL contexts.
   FlOpenGLManager* opengl_manager;
@@ -248,14 +247,102 @@ static void setup_locales(FlEngine* self) {
   }
 }
 
+static bool create_opengl_backing_store(
+    FlEngine* self,
+    const FlutterBackingStoreConfig* config,
+    FlutterBackingStore* backing_store_out) {
+#if 0
+  // The pixel format passed to the engine.
+  GLint sized_format;
+
+  // The format used to create textures.
+  GLint general_format;
+
+  if (epoxy_has_gl_extension("GL_EXT_texture_format_BGRA8888")) {
+    self->sized_format = GL_BGRA8_EXT;
+    self->general_format = GL_BGRA_EXT;
+  } else {
+    self->sized_format = GL_RGBA8;
+    self->general_format = GL_RGBA;
+  }
+#endif
+  GLint sized_format = GL_RGBA8;
+  GLint general_format = GL_RGBA;
+
+  FlFramebuffer* framebuffer = fl_framebuffer_new(
+      general_format, config->size.width, config->size.height);
+  if (!framebuffer) {
+    g_warning("Failed to create backing store");
+    return FALSE;
+  }
+
+  backing_store_out->type = kFlutterBackingStoreTypeOpenGL;
+  backing_store_out->open_gl.type = kFlutterOpenGLTargetTypeFramebuffer;
+  backing_store_out->open_gl.framebuffer.name =
+      fl_framebuffer_get_id(framebuffer);
+  backing_store_out->open_gl.framebuffer.target = sized_format;
+  backing_store_out->open_gl.framebuffer.destruction_callback = [](void* p) {
+    // Backing store destroyed in fl_compositor_opengl_collect_backing_store(),
+    // set on FlutterCompositor.collect_backing_store_callback during engine
+    // start.
+  };
+
+  return true;
+}
+
+static bool collect_opengl_backing_store(
+    FlEngine* self,
+    const FlutterBackingStore* backing_store) {
+  // FIXME
+  return true;
+}
+
+static bool create_software_backing_store(
+    FlEngine* self,
+    const FlutterBackingStoreConfig* config,
+    FlutterBackingStore* backing_store_out) {
+  size_t allocation_length = config->size.width * config->size.height * 4;
+  uint8_t* allocation = static_cast<uint8_t*>(malloc(allocation_length));
+  if (allocation == nullptr) {
+    return false;
+  }
+
+  backing_store_out->type = kFlutterBackingStoreTypeSoftware;
+  backing_store_out->software.allocation = allocation;
+  backing_store_out->software.height = config->size.height;
+  backing_store_out->software.row_bytes = config->size.width * 4;
+  backing_store_out->software.user_data = nullptr;
+  backing_store_out->software.destruction_callback = [](void* p) {
+    // Backing store destroyed in
+    // fl_compositor_software_collect_backing_store(), set on
+    // FlutterCompositor.collect_backing_store_callback during engine start.
+  };
+
+  return true;
+}
+
+static bool collect_software_backing_store(
+    FlEngine* self,
+    const FlutterBackingStore* backing_store) {
+  free(const_cast<void*>(backing_store->software.allocation));
+  return true;
+}
+
 // Called when engine needs a backing store for a specific #FlutterLayer.
 static bool compositor_create_backing_store_callback(
     const FlutterBackingStoreConfig* config,
     FlutterBackingStore* backing_store_out,
     void* user_data) {
   FlEngine* self = static_cast<FlEngine*>(user_data);
-  return fl_compositor_create_backing_store(self->compositor, config,
-                                            backing_store_out);
+
+  switch (self->renderer_type) {
+    case kOpenGL:
+      return create_opengl_backing_store(self, config, backing_store_out);
+    case kSoftware:
+      return create_software_backing_store(self, config, backing_store_out);
+    default:
+      return false;
+  }
 }
 
 // Called when the backing store is to be released.
@@ -263,15 +350,31 @@ static bool compositor_collect_backing_store_callback(
     const FlutterBackingStore* backing_store,
     void* user_data) {
   FlEngine* self = static_cast<FlEngine*>(user_data);
-  return fl_compositor_collect_backing_store(self->compositor, backing_store);
+
+  switch (self->renderer_type) {
+    case kOpenGL:
+      return collect_opengl_backing_store(self, backing_store);
+    case kSoftware:
+      return collect_software_backing_store(self, backing_store);
+    default:
+      return false;
+  }
 }
 
 // Called when embedder should composite contents of each layer onto the screen.
 static bool compositor_present_view_callback(
     const FlutterPresentViewInfo* info) {
   FlEngine* self = static_cast<FlEngine*>(info->user_data);
-  return fl_compositor_present_layers(self->compositor, info->view_id,
-                                      info->layers, info->layers_count);
+
+  g_autoptr(FlRenderable) renderable =
+      fl_engine_get_renderable(self, info->view_id);
+  if (renderable == nullptr) {
+    return false;
+  }
+
+  fl_renderable_present(renderable, info->layers, info->layers_count);
+
+  return true;
 }
 
 // Flutter engine rendering callbacks.
@@ -478,7 +581,6 @@ static void fl_engine_dispose(GObject* object) {
 
   g_clear_object(&self->project);
   g_clear_object(&self->display_monitor);
-  g_clear_object(&self->compositor);
   g_clear_object(&self->opengl_manager);
   g_clear_object(&self->texture_registrar);
   g_clear_object(&self->binary_messenger);
@@ -557,18 +659,18 @@ static FlEngine* fl_engine_new_full(FlDartProject* project,
   self->project = FL_DART_PROJECT(g_object_ref(project));
   const gchar* renderer = g_getenv("FLUTTER_LINUX_RENDERER");
   if (g_strcmp0(renderer, "software") == 0) {
-    self->compositor = FL_COMPOSITOR(fl_compositor_software_new(self));
     g_warning(
         "Using the software renderer. Not all features are supported. This is "
         "not recommended.\n"
         "\n"
         "To switch back to the default renderer, unset the "
         "FLUTTER_LINUX_RENDERER environment variable.");
+    self->renderer_type = kSoftware;
   } else {
     if (renderer != nullptr && strcmp(renderer, "opengl") != 0) {
       g_warning("Unknown renderer type '%s', defaulting to opengl", renderer);
     }
-    self->compositor = FL_COMPOSITOR(fl_compositor_opengl_new(self));
+    self->renderer_type = kOpenGL;
   }
   if (binary_messenger != nullptr) {
     self->binary_messenger =
@@ -604,11 +706,6 @@ G_MODULE_EXPORT FlEngine* fl_engine_new_headless(FlDartProject* project) {
   return fl_engine_new(project);
 }
 
-FlCompositor* fl_engine_get_compositor(FlEngine* self) {
-  g_return_val_if_fail(FL_IS_ENGINE(self), nullptr);
-  return self->compositor;
-}
-
 FlOpenGLManager* fl_engine_get_opengl_manager(FlEngine* self) {
   g_return_val_if_fail(FL_IS_ENGINE(self), nullptr);
   return self->opengl_manager;
@@ -623,7 +720,7 @@ gboolean fl_engine_start(FlEngine* self, GError** error) {
   g_return_val_if_fail(FL_IS_ENGINE(self), FALSE);
 
   FlutterRendererConfig config = {};
-  config.type = fl_compositor_get_renderer_type(self->compositor);
+  config.type = self->renderer_type;
   switch (config.type) {
     case kSoftware:
       config.software.struct_size = sizeof(FlutterSoftwareRendererConfig);
@@ -837,6 +934,7 @@ gboolean fl_engine_add_view_finish(FlEngine* self,
   return g_task_propagate_boolean(G_TASK(result), error);
 }
 
+// FIXME: Remove
 FlRenderable* fl_engine_get_renderable(FlEngine* self, FlutterViewId view_id) {
   g_return_val_if_fail(FL_IS_ENGINE(self), nullptr);
 

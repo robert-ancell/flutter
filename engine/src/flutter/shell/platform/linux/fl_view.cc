@@ -11,8 +11,6 @@
 
 #include "flutter/common/constants.h"
 #include "flutter/shell/platform/linux/fl_accessible_node.h"
-#include "flutter/shell/platform/linux/fl_compositor_opengl.h"
-#include "flutter/shell/platform/linux/fl_compositor_software.h"
 #include "flutter/shell/platform/linux/fl_engine_private.h"
 #include "flutter/shell/platform/linux/fl_key_event.h"
 #include "flutter/shell/platform/linux/fl_opengl_manager.h"
@@ -33,8 +31,11 @@ struct _FlView {
   // Event box the render area goes inside.
   GtkWidget* event_box;
 
-  // The widget rendering the Flutter view, either GtkGLArea or GtkDrawingArea.
-  GtkWidget* render_area;
+  // The widget rendering the Flutter view.
+  GtkDrawingArea* render_area;
+
+  // Software surface ready for rendering.
+  cairo_surface_t* surface;
 
   // Engine this view is showing.
   FlEngine* engine;
@@ -199,9 +200,9 @@ static void handle_geometry_changed(FlView* self) {
   // Note: `gtk_widget_init()` initializes the size allocation to 1x1.
   if (allocation.width > 1 && allocation.height > 1 &&
       gtk_widget_get_realized(GTK_WIDGET(self))) {
-    fl_compositor_wait_for_frame(fl_engine_get_compositor(self->engine),
-                                 allocation.width * scale_factor,
-                                 allocation.height * scale_factor);
+    // fl_compositor_wait_for_frame(fl_engine_get_compositor(self->engine),
+    //                              allocation.width * scale_factor,
+    //                              allocation.height * scale_factor);
   }
 }
 
@@ -245,11 +246,56 @@ static void on_pre_engine_restart_cb(FlView* self) {
   init_touch(self);
 }
 
-// Implements FlRenderable::redraw
-static void fl_view_redraw(FlRenderable* renderable) {
+static void present_software(FlView* self,
+                             const FlutterLayer** layers,
+                             size_t layers_count) {
+  // Nothing to render onto yet.
+  if (self->surface == nullptr) {
+    return;
+  }
+
+  gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
+
+  cairo_t* cr = cairo_create(self->surface);
+  for (size_t i = 0; i < layers_count; i++) {
+    const FlutterLayer* layer = layers[i];
+
+    if (layer->type != kFlutterLayerContentTypeBackingStore) {
+      continue;
+    }
+
+    const FlutterBackingStore* backing_store = layer->backing_store;
+    if (backing_store->type != kFlutterBackingStoreTypeSoftware) {
+      continue;
+    }
+
+    unsigned char* data = static_cast<unsigned char*>(
+        const_cast<void*>(backing_store->software.allocation));
+    cairo_surface_t* surface = cairo_image_surface_create_for_data(
+        data, CAIRO_FORMAT_ARGB32, backing_store->software.row_bytes / 4,
+        backing_store->software.height, backing_store->software.row_bytes);
+    cairo_surface_set_device_scale(surface, scale_factor, scale_factor);
+
+    cairo_set_source_surface(cr, surface, layer->offset.x, layer->offset.y);
+    cairo_rectangle(cr, layer->offset.x, layer->offset.y, layer->size.width,
+                    layer->size.height);
+    cairo_fill(cr);
+
+    cairo_surface_destroy(surface);
+  }
+  cairo_destroy(cr);
+}
+
+// Implements FlRenderable::present
+static void fl_view_present(FlRenderable* renderable,
+                            const FlutterLayer** layers,
+                            size_t layers_count) {
   FlView* self = FL_VIEW(renderable);
 
-  gtk_widget_queue_draw(self->render_area);
+  // FIXME: OpenGL
+  present_software(self, layers, layers_count);
+
+  gtk_widget_queue_draw(GTK_WIDGET(self->render_area));
 
   if (!self->have_first_frame) {
     self->have_first_frame = TRUE;
@@ -277,7 +323,7 @@ static FlPluginRegistrar* fl_view_get_registrar_for_plugin(
 }
 
 static void fl_renderable_iface_init(FlRenderableInterface* iface) {
-  iface->redraw = fl_view_redraw;
+  iface->present = fl_view_present;
   iface->make_current = fl_view_make_current;
 }
 
@@ -441,23 +487,7 @@ static void gesture_zoom_end_cb(FlView* self) {
   fl_scrolling_manager_handle_zoom_end(self->scrolling_manager);
 }
 
-static GdkGLContext* create_context_cb(FlView* self) {
-  FlOpenGLManager* opengl_manager = fl_engine_get_opengl_manager(self->engine);
-  g_autoptr(GError) error = nullptr;
-  if (!fl_opengl_manager_create_contexts(
-          opengl_manager, gtk_widget_get_parent_window(GTK_WIDGET(self)),
-          &error)) {
-    gtk_gl_area_set_error(GTK_GL_AREA(self->render_area), error);
-    return nullptr;
-  }
-
-  return GDK_GL_CONTEXT(
-      g_object_ref(fl_opengl_manager_get_context(opengl_manager)));
-}
-
 static void realize_cb(FlView* self) {
-  fl_compositor_setup(fl_engine_get_compositor(self->engine));
-
   GtkWidget* toplevel_window = gtk_widget_get_toplevel(GTK_WIDGET(self));
 
   self->window_state_monitor =
@@ -487,60 +517,38 @@ static void secondary_realize_cb(FlView* self) {
   setup_cursor(self);
 }
 
-static void paint_background(FlView* self, cairo_t* cr) {
-  // Don't bother drawing if fully transparent - the widget above this will
-  // already be drawn by GTK.
-  if (self->background_color->red == 0 && self->background_color->green == 0 &&
-      self->background_color->blue == 0 && self->background_color->alpha == 0) {
+static void render_area_size_allocate_cb(FlView* self,
+                                         GtkAllocation* allocation) {
+  cairo_surface_destroy(self->surface);
+  gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
+  self->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
+                                             allocation->width * scale_factor,
+                                             allocation->height * scale_factor);
+  cairo_surface_set_device_scale(self->surface, scale_factor, scale_factor);
+}
+
+static void draw_software(FlView* self, cairo_t* cr) {
+  if (self->surface == nullptr) {
     return;
   }
 
-  gdk_cairo_set_source_rgba(cr, self->background_color);
+  cairo_set_source_surface(cr, self->surface, 0.0, 0.0);
   cairo_paint(cr);
 }
 
-static gboolean opengl_draw_cb(FlView* self, cairo_t* cr) {
-  paint_background(self, cr);
-
-  return FALSE;
-}
-
-static gboolean render_cb(FlView* self, GdkGLContext* context) {
-  if (gtk_gl_area_get_error(GTK_GL_AREA(self->render_area)) != NULL) {
-    return FALSE;
+static gboolean draw_cb(FlView* self, cairo_t* cr) {
+  // Don't bother drawing if fully transparent - the widget above this will
+  // already be drawn by GTK.
+  if (self->background_color->red != 0 || self->background_color->green != 0 ||
+      self->background_color->blue != 0 || self->background_color->alpha != 0) {
+    gdk_cairo_set_source_rgba(cr, self->background_color);
+    cairo_paint(cr);
   }
 
-  int width = gtk_widget_get_allocated_width(self->render_area);
-  int height = gtk_widget_get_allocated_height(self->render_area);
-  gint scale_factor = gtk_widget_get_scale_factor(self->render_area);
-  fl_compositor_opengl_render(
-      FL_COMPOSITOR_OPENGL(fl_engine_get_compositor(self->engine)),
-      self->view_id, width * scale_factor, height * scale_factor);
+  // FIXME: OpenGL
+  draw_software(self, cr);
 
   return TRUE;
-}
-
-static gboolean software_draw_cb(FlView* self, cairo_t* cr) {
-  paint_background(self, cr);
-
-  return fl_compositor_software_render(
-      FL_COMPOSITOR_SOFTWARE(fl_engine_get_compositor(self->engine)),
-      self->view_id, cr, gtk_widget_get_scale_factor(GTK_WIDGET(self)));
-}
-
-static void unrealize_cb(FlView* self) {
-  g_autoptr(GError) error = nullptr;
-
-  fl_opengl_manager_make_current(fl_engine_get_opengl_manager(self->engine));
-
-  GError* gl_error = gtk_gl_area_get_error(GTK_GL_AREA(self->render_area));
-  if (gl_error != NULL) {
-    g_warning("Failed to uninitialize GLArea: %s", gl_error->message);
-    return;
-  }
-
-  fl_compositor_opengl_cleanup(
-      FL_COMPOSITOR_OPENGL(fl_engine_get_compositor(self->engine)));
 }
 
 static void size_allocate_cb(FlView* self) {
@@ -564,6 +572,7 @@ static void fl_view_dispose(GObject* object) {
 
   g_cancellable_cancel(self->cancellable);
 
+  g_clear_pointer(&self->surface, cairo_surface_destroy);
   if (self->engine != nullptr) {
     FlMouseCursorHandler* handler =
         fl_engine_get_mouse_cursor_handler(self->engine);
@@ -607,7 +616,7 @@ static void fl_view_realize(GtkWidget* widget) {
   GTK_WIDGET_CLASS(fl_view_parent_class)->realize(widget);
 
   // Realize the child widgets.
-  gtk_widget_realize(self->render_area);
+  gtk_widget_realize(GTK_WIDGET(self->render_area));
 }
 
 static gboolean handle_key_event(FlView* self, GdkEventKey* key_event) {
@@ -690,34 +699,15 @@ static void fl_view_class_init(FlViewClass* klass) {
 
 // Engine related construction.
 static void setup_engine(FlView* self) {
-  FlutterRendererType renderer_type =
-      fl_compositor_get_renderer_type(fl_engine_get_compositor(self->engine));
-  switch (renderer_type) {
-    case kOpenGL:
-      self->render_area = gtk_gl_area_new();
-      gtk_gl_area_set_has_alpha(GTK_GL_AREA(self->render_area), TRUE);
-      g_signal_connect_swapped(self->render_area, "draw",
-                               G_CALLBACK(opengl_draw_cb), self);
-      g_signal_connect_swapped(self->render_area, "render",
-                               G_CALLBACK(render_cb), self);
-      g_signal_connect_swapped(self->render_area, "create-context",
-                               G_CALLBACK(create_context_cb), self);
-      g_signal_connect_swapped(self->render_area, "unrealize",
-                               G_CALLBACK(unrealize_cb), self);
-      break;
-    case kSoftware:
-      self->render_area = gtk_drawing_area_new();
-      g_signal_connect_swapped(self->render_area, "draw",
-                               G_CALLBACK(software_draw_cb), self);
-      break;
-    default:
-      self->render_area = gtk_label_new("Unsupported Flutter renderer type");
-      break;
-  }
-
-  gtk_widget_show(self->render_area);
-  gtk_container_add(GTK_CONTAINER(self->event_box), self->render_area);
+  self->render_area = GTK_DRAWING_AREA(gtk_drawing_area_new());
+  gtk_widget_show(GTK_WIDGET(self->render_area));
+  gtk_container_add(GTK_CONTAINER(self->event_box),
+                    GTK_WIDGET(self->render_area));
   g_signal_connect_swapped(self->render_area, "realize", G_CALLBACK(realize_cb),
+                           self);
+  g_signal_connect_swapped(self->render_area, "size-allocate",
+                           G_CALLBACK(render_area_size_allocate_cb), self);
+  g_signal_connect_swapped(self->render_area, "draw", G_CALLBACK(draw_cb),
                            self);
 
   self->view_accessible = fl_view_accessible_new(self->engine, self->view_id);

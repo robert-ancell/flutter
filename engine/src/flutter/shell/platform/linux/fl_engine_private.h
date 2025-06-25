@@ -64,16 +64,6 @@ FlEngine* fl_engine_new_with_binary_messenger(
     FlBinaryMessenger* binary_messenger);
 
 /**
- * fl_engine_get_compositor:
- * @engine: an #FlEngine.
- *
- * Gets the compositor used by this engine.
- *
- * Returns: an #FlCompositor.
- */
-FlCompositor* fl_engine_get_compositor(FlEngine* engine);
-
-/**
  * fl_engine_get_opengl_manager:
  * @engine: an #FlEngine.
  *

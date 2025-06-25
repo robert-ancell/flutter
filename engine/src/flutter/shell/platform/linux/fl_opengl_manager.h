@@ -25,21 +25,6 @@ G_DECLARE_FINAL_TYPE(FlOpenGLManager,
 FlOpenGLManager* fl_opengl_manager_new();
 
 /**
- * fl_opengl_manager_create_contexts:
- * @manager: an #FlOpenGLManager.
- * @window: the window that is being rendered on.
- * @error: (allow-none): #GError location to store the error occurring, or
- * %NULL to ignore.
- *
- * Create rendering contexts.
- *
- * Returns: %TRUE if contexts were created, %FALSE if there was an error.
- */
-gboolean fl_opengl_manager_create_contexts(FlOpenGLManager* manager,
-                                           GdkWindow* window,
-                                           GError** error);
-
-/**
  * fl_opengl_manager_get_context:
  * @manager: an #FlOpenGLManager.
  *

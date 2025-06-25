@@ -13,7 +13,6 @@
 #include "flutter/shell/platform/linux/fl_accessible_node.h"
 #include "flutter/shell/platform/linux/fl_engine_private.h"
 #include "flutter/shell/platform/linux/fl_key_event.h"
-#include "flutter/shell/platform/linux/fl_opengl_manager.h"
 #include "flutter/shell/platform/linux/fl_plugin_registrar_private.h"
 #include "flutter/shell/platform/linux/fl_pointer_manager.h"
 #include "flutter/shell/platform/linux/fl_scrolling_manager.h"
@@ -512,10 +511,6 @@ static void realize_cb(FlView* self) {
   // Handle requests by the user to close the application.
   g_signal_connect_swapped(toplevel_window, "delete-event",
                            G_CALLBACK(window_delete_event_cb), self);
-
-  // Flutter engine will need to make the context current from raster thread
-  // during initialization.
-  fl_opengl_manager_clear_current(fl_engine_get_opengl_manager(self->engine));
 
   g_autoptr(GError) error = nullptr;
   if (!fl_engine_start(self->engine, &error)) {

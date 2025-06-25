@@ -74,16 +74,6 @@ FlEngine* fl_engine_new_with_binary_messenger(
 FlutterRendererType fl_engine_get_renderer_type(FlEngine* engine);
 
 /**
- * fl_engine_get_opengl_manager:
- * @engine: an #FlEngine.
- *
- * Gets the OpenGL manager used by this engine.
- *
- * Returns: an #FlOpenGLManager.
- */
-FlOpenGLManager* fl_engine_get_opengl_manager(FlEngine* engine);
-
-/**
  * fl_engine_get_display_monitor:
  * @engine: an #FlEngine.
  *

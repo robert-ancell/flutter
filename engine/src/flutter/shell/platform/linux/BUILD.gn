@@ -101,6 +101,7 @@ source_set("flutter_linux_sources") {
 #    "fl_compositor.cc",
 #    "fl_compositor_opengl.cc",
 #    "fl_compositor_software.cc",
+#    "fl_opengl_manager.cc",
   sources = [
     "fl_accessible_node.cc",
     "fl_accessible_text_field.cc",
@@ -131,7 +132,6 @@ source_set("flutter_linux_sources") {
     "fl_method_response.cc",
     "fl_mouse_cursor_channel.cc",
     "fl_mouse_cursor_handler.cc",
-    "fl_opengl_manager.cc",
     "fl_pixel_buffer_texture.cc",
     "fl_platform_channel.cc",
     "fl_platform_handler.cc",

@@ -18,7 +18,6 @@
 #include "flutter/shell/platform/linux/fl_engine_private.h"
 #include "flutter/shell/platform/linux/fl_framebuffer.h"
 #include "flutter/shell/platform/linux/fl_keyboard_handler.h"
-#include "flutter/shell/platform/linux/fl_opengl_manager.h"
 #include "flutter/shell/platform/linux/fl_pixel_buffer_texture_private.h"
 #include "flutter/shell/platform/linux/fl_platform_handler.h"
 #include "flutter/shell/platform/linux/fl_plugin_registrar_private.h"
@@ -51,8 +50,11 @@ struct _FlEngine {
   // Type of renderer.
   FlutterRendererType renderer_type;
 
-  // Manages OpenGL contexts.
-  FlOpenGLManager* opengl_manager;
+  // FIXME
+  EGLDisplay display;
+  EGLConfig config;
+  EGLContext render_context;
+  EGLContext resource_context;
 
   // Messenger used to send and receive platform messages.
   FlBinaryMessenger* binary_messenger;
@@ -385,14 +387,14 @@ static void* fl_engine_gl_proc_resolver(void* user_data, const char* name) {
 
 static bool fl_engine_gl_make_current(void* user_data) {
   FlEngine* self = static_cast<FlEngine*>(user_data);
-  fl_opengl_manager_make_current(self->opengl_manager);
-  return true;
+  return eglMakeCurrent(self->display, EGL_NO_SURFACE, EGL_NO_SURFACE,
+                        self->render_context) == EGL_TRUE;
 }
 
 static bool fl_engine_gl_clear_current(void* user_data) {
   FlEngine* self = static_cast<FlEngine*>(user_data);
-  fl_opengl_manager_clear_current(self->opengl_manager);
-  return true;
+  return eglMakeCurrent(self->display, EGL_NO_SURFACE, EGL_NO_SURFACE,
+                        EGL_NO_CONTEXT) == EGL_TRUE;
 }
 
 static uint32_t fl_engine_gl_get_fbo(void* user_data) {
@@ -402,8 +404,8 @@ static uint32_t fl_engine_gl_get_fbo(void* user_data) {
 
 static bool fl_engine_gl_make_resource_current(void* user_data) {
   FlEngine* self = static_cast<FlEngine*>(user_data);
-  fl_opengl_manager_make_resource_current(self->opengl_manager);
-  return true;
+  return eglMakeCurrent(self->display, EGL_NO_SURFACE, EGL_NO_SURFACE,
+                        self->resource_context) == EGL_TRUE;
 }
 
 // Called by the engine to retrieve an external texture.
@@ -581,7 +583,6 @@ static void fl_engine_dispose(GObject* object) {
 
   g_clear_object(&self->project);
   g_clear_object(&self->display_monitor);
-  g_clear_object(&self->opengl_manager);
   g_clear_object(&self->texture_registrar);
   g_clear_object(&self->binary_messenger);
   g_clear_object(&self->settings_handler);
@@ -631,8 +632,6 @@ static void fl_engine_init(FlEngine* self) {
   if (FlutterEngineGetProcAddresses(&self->embedder_api) != kSuccess) {
     g_warning("Failed get get engine function pointers");
   }
-
-  self->opengl_manager = fl_opengl_manager_new();
 
   self->display_monitor =
       fl_display_monitor_new(self, gdk_display_get_default());
@@ -711,14 +710,82 @@ FlutterRendererType fl_engine_get_renderer_type(FlEngine* self) {
   return self->renderer_type;
 }
 
-FlOpenGLManager* fl_engine_get_opengl_manager(FlEngine* self) {
-  g_return_val_if_fail(FL_IS_ENGINE(self), nullptr);
-  return self->opengl_manager;
-}
-
 FlDisplayMonitor* fl_engine_get_display_monitor(FlEngine* self) {
   g_return_val_if_fail(FL_IS_ENGINE(self), nullptr);
   return self->display_monitor;
+}
+
+static gboolean start_software(FlEngine* self,
+                               FlutterRendererConfig* config,
+                               GError** error) {
+  config->software.struct_size = sizeof(FlutterSoftwareRendererConfig);
+  // No action required, as this is handled in
+  // compositor_present_view_callback.
+  config->software.surface_present_callback =
+      [](void* user_data, const void* allocation, size_t row_bytes,
+         size_t height) { return true; };
+
+  return TRUE;
+}
+
+static gboolean start_opengl(FlEngine* self,
+                             FlutterRendererConfig* config,
+                             GError** error) {
+  self->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+  if (self->display == nullptr) {
+    g_set_error(error, fl_engine_error_quark(), FL_ENGINE_ERROR_FAILED,
+                "Unable to get EGL display");
+    return FALSE;
+  }
+
+  if (eglInitialize(self->display, nullptr, nullptr) != EGL_TRUE) {
+    g_set_error(error, fl_engine_error_quark(), FL_ENGINE_ERROR_FAILED,
+                "Unable to initialize EGL display");
+    return FALSE;
+  }
+
+  if (eglBindAPI(EGL_OPENGL_API) != EGL_TRUE) {
+    g_set_error(error, fl_engine_error_quark(), FL_ENGINE_ERROR_FAILED,
+                "Unable to bind OpenGL API");
+    return FALSE;
+  }
+
+  const EGLint config_attributes[] = {EGL_RED_SIZE,   8, EGL_GREEN_SIZE,   8,
+                                      EGL_BLUE_SIZE,  8, EGL_ALPHA_SIZE,   8,
+                                      EGL_DEPTH_SIZE, 8, EGL_STENCIL_SIZE, 8,
+                                      EGL_NONE};
+  EGLint num_config = 0;
+  if (eglChooseConfig(self->display, config_attributes, &self->config, 1,
+                      &num_config) != EGL_TRUE) {
+    g_set_error(error, fl_engine_error_quark(), FL_ENGINE_ERROR_FAILED,
+                "Unable to choose EGL configuration");
+    return FALSE;
+  }
+  if (num_config != 1) {
+    g_set_error(error, fl_engine_error_quark(), FL_ENGINE_ERROR_FAILED,
+                "Unable to find valid EGL configuration");
+    return FALSE;
+  }
+
+  const EGLint context_attributes[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+  self->render_context = eglCreateContext(self->display, self->config,
+                                          EGL_NO_CONTEXT, context_attributes);
+  self->resource_context = eglCreateContext(
+      self->display, self->config, self->render_context, context_attributes);
+
+  config->open_gl.struct_size = sizeof(FlutterOpenGLRendererConfig);
+  config->open_gl.gl_proc_resolver = fl_engine_gl_proc_resolver;
+  config->open_gl.make_current = fl_engine_gl_make_current;
+  config->open_gl.clear_current = fl_engine_gl_clear_current;
+  config->open_gl.fbo_callback = fl_engine_gl_get_fbo;
+  // No action required, as this is handled in
+  // compositor_present_view_callback.
+  config->open_gl.present = [](void* user_data) { return true; };
+  config->open_gl.make_resource_current = fl_engine_gl_make_resource_current;
+  config->open_gl.gl_external_texture_frame_callback =
+      fl_engine_gl_external_texture_frame_callback;
+
+  return TRUE;
 }
 
 gboolean fl_engine_start(FlEngine* self, GError** error) {
@@ -728,25 +795,14 @@ gboolean fl_engine_start(FlEngine* self, GError** error) {
   config.type = self->renderer_type;
   switch (config.type) {
     case kSoftware:
-      config.software.struct_size = sizeof(FlutterSoftwareRendererConfig);
-      // No action required, as this is handled in
-      // compositor_present_view_callback.
-      config.software.surface_present_callback =
-          [](void* user_data, const void* allocation, size_t row_bytes,
-             size_t height) { return true; };
+      if (!start_software(self, &config, error)) {
+        return FALSE;
+      }
       break;
     case kOpenGL:
-      config.open_gl.struct_size = sizeof(FlutterOpenGLRendererConfig);
-      config.open_gl.gl_proc_resolver = fl_engine_gl_proc_resolver;
-      config.open_gl.make_current = fl_engine_gl_make_current;
-      config.open_gl.clear_current = fl_engine_gl_clear_current;
-      config.open_gl.fbo_callback = fl_engine_gl_get_fbo;
-      // No action required, as this is handled in
-      // compositor_present_view_callback.
-      config.open_gl.present = [](void* user_data) { return true; };
-      config.open_gl.make_resource_current = fl_engine_gl_make_resource_current;
-      config.open_gl.gl_external_texture_frame_callback =
-          fl_engine_gl_external_texture_frame_callback;
+      if (!start_opengl(self, &config, error)) {
+        return FALSE;
+      }
       break;
     case kMetal:
     case kVulkan:

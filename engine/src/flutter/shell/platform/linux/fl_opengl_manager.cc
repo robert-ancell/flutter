@@ -42,38 +42,6 @@ FlOpenGLManager* fl_opengl_manager_new() {
   return self;
 }
 
-gboolean fl_opengl_manager_create_contexts(FlOpenGLManager* self,
-                                           GdkWindow* window,
-                                           GError** error) {
-  g_return_val_if_fail(FL_IS_OPENGL_MANAGER(self), FALSE);
-
-  self->gdk_context = gdk_window_create_gl_context(window, error);
-  if (self->gdk_context == nullptr) {
-    return FALSE;
-  }
-  if (!gdk_gl_context_realize(self->gdk_context, error)) {
-    return FALSE;
-  }
-
-  self->main_context = gdk_window_create_gl_context(window, error);
-  if (self->main_context == nullptr) {
-    return FALSE;
-  }
-  if (!gdk_gl_context_realize(self->main_context, error)) {
-    return FALSE;
-  }
-
-  self->resource_context = gdk_window_create_gl_context(window, error);
-  if (self->resource_context == nullptr) {
-    return FALSE;
-  }
-  if (!gdk_gl_context_realize(self->resource_context, error)) {
-    return FALSE;
-  }
-
-  return TRUE;
-}
-
 GdkGLContext* fl_opengl_manager_get_context(FlOpenGLManager* self) {
   g_return_val_if_fail(FL_IS_OPENGL_MANAGER(self), nullptr);
   return self->gdk_context;

@@ -53989,8 +53989,6 @@ ORIGIN: ../../../flutter/shell/platform/linux/fl_view_test.cc + ../../../flutter
 ORIGIN: ../../../flutter/shell/platform/linux/fl_window_state_monitor.cc + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_window_state_monitor.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_window_state_monitor_test.cc + ../../../flutter/LICENSE
-ORIGIN: ../../../flutter/shell/platform/linux/fl_windowing_channel.cc + ../../../flutter/LICENSE
-ORIGIN: ../../../flutter/shell/platform/linux/fl_windowing_channel.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_windowing_handler.cc + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_windowing_handler.h + ../../../flutter/LICENSE
 ORIGIN: ../../../flutter/shell/platform/linux/fl_windowing_handler_test.cc + ../../../flutter/LICENSE
@@ -57076,8 +57074,6 @@ FILE: ../../../flutter/shell/platform/linux/fl_view_test.cc
 FILE: ../../../flutter/shell/platform/linux/fl_window_state_monitor.cc
 FILE: ../../../flutter/shell/platform/linux/fl_window_state_monitor.h
 FILE: ../../../flutter/shell/platform/linux/fl_window_state_monitor_test.cc
-FILE: ../../../flutter/shell/platform/linux/fl_windowing_channel.cc
-FILE: ../../../flutter/shell/platform/linux/fl_windowing_channel.h
 FILE: ../../../flutter/shell/platform/linux/fl_windowing_handler.cc
 FILE: ../../../flutter/shell/platform/linux/fl_windowing_handler.h
 FILE: ../../../flutter/shell/platform/linux/fl_windowing_handler_test.cc

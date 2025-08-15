@@ -57,6 +57,16 @@ void fl_task_runner_block_main_thread(FlTaskRunner* task_runner);
  */
 void fl_task_runner_release_main_thread(FlTaskRunner* self);
 
+/**
+ * fl_task_runner_run_next_task:
+ * @task_runner: an #FlTaskRunner.
+ *
+ * Runs the next available task. Blocks until this occurs.
+ */
+void fl_task_runner_run_next_task(FlTaskRunner* self);
+
+void fl_task_runner_unlock(FlTaskRunner* self);
+
 G_END_DECLS
 
 #endif  // FLUTTER_SHELL_PLATFORM_LINUX_FL_TASK_RUNNER_H_

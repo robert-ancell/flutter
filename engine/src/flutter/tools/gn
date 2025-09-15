@@ -727,6 +727,9 @@ def to_gn_args(args):
   if args.fstack_protector:
     gn_args['use_fstack_protector'] = True
 
+  if args.ccache:
+    gn_args['use_ccache'] = True
+
   enable_vulkan_validation = args.enable_vulkan_validation_layers
 
   # Enable Vulkan validation layer automatically on debug builds for arm64.
@@ -1204,6 +1207,13 @@ def parse_args(args):
       default=False,
       action='store_true',
       help='Whether the produced Flutter.framework is app extension safe. Only for iOS.'
+  )
+
+  parser.add_argument(
+      '--ccache',
+      default=False,
+      action='store_true',
+      help='Use ccache to speed up compilation. Requires ccache to be installed.'
   )
 
   # Verbose output.

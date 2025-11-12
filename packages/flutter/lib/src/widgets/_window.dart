@@ -217,6 +217,9 @@ abstract class RegularWindowController extends BaseWindowController {
   /// The [title] argument configures the window's initial title.
   /// If omitted, some platforms might fall back to the app's name.
   ///
+  /// If [decorated] is false then no window decorations (titlebar, border, shadows)
+  /// are drawn. Flutter should draw the decorations instead.
+  ///
   /// The [delegate] argument can be used to listen to the window's
   /// lifecycle. For example, it can be used to save state before
   /// a window is closed.
@@ -227,6 +230,7 @@ abstract class RegularWindowController extends BaseWindowController {
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
+    bool decorated = true,
     RegularWindowControllerDelegate? delegate,
   }) {
     if (!isWindowingEnabled) {
@@ -243,6 +247,7 @@ abstract class RegularWindowController extends BaseWindowController {
       preferredSize: preferredSize,
       preferredConstraints: preferredConstraints,
       title: title,
+      decorated: decorated,
     );
   }
 
@@ -640,6 +645,7 @@ abstract class WindowingOwner {
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
+    bool decorated = true,
   });
 
   /// Creates a [DialogWindowController] with the provided properties.
@@ -688,6 +694,7 @@ class _WindowingOwnerUnsupported extends WindowingOwner {
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
+    bool decorated = true,
   }) {
     throw UnsupportedError(errorMessage);
   }

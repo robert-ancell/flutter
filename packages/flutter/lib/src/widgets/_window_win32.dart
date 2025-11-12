@@ -135,10 +135,11 @@ class WindowingOwnerWin32 extends WindowingOwner {
   @internal
   @override
   RegularWindowController createRegularWindowController({
+    required RegularWindowControllerDelegate delegate,
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
-    required RegularWindowControllerDelegate delegate,
+    bool decorated = true,
   }) {
     return RegularWindowControllerWin32(
       owner: this,

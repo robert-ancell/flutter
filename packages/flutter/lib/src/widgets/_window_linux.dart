@@ -210,6 +210,11 @@ class _GtkWindow extends _GtkContainer {
     return _nativeToString(_gtkWindowGetTitle(instance));
   }
 
+  /// Sets if this window has decorations (titlebar, borders, shadow).
+  void setDecorated(bool decorated) {
+    _gtkWindowSetDecorated(instance, decorated);
+  }
+
   /// Set the default size of the window.
   void setDefaultSize(int width, int height) {
     _gtkWindowSetDefaultSize(instance, width, height);
@@ -300,6 +305,11 @@ class _GtkWindow extends _GtkContainer {
     ffi.Pointer<ffi.NativeType> window,
     ffi.Pointer<ffi.Uint8> title,
   );
+
+  @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.NativeType>, ffi.Bool)>(
+    symbol: 'gtk_window_set_decorated',
+  )
+  external static void _gtkWindowSetDecorated(ffi.Pointer<ffi.NativeType> window, bool decorated);
 
   @ffi.Native<ffi.Pointer<ffi.Uint8> Function(ffi.Pointer<ffi.NativeType>)>(
     symbol: 'gtk_window_get_title',
@@ -515,16 +525,18 @@ class WindowingOwnerLinux extends WindowingOwner {
   @internal
   @override
   RegularWindowController createRegularWindowController({
+    required RegularWindowControllerDelegate delegate,
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
-    required RegularWindowControllerDelegate delegate,
+    bool decorated = true,
   }) {
     return RegularWindowControllerLinux(
       delegate: delegate,
       preferredSize: preferredSize,
       preferredConstraints: preferredConstraints,
       title: title,
+      decorated: decorated,
     );
   }
 
@@ -565,6 +577,7 @@ class RegularWindowControllerLinux extends RegularWindowController {
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
+    bool decorated = true,
   }) : _delegate = delegate,
        _window = _GtkWindow(),
        super.empty() {
@@ -598,6 +611,7 @@ class RegularWindowControllerLinux extends RegularWindowController {
     if (title != null) {
       setTitle(title);
     }
+    _window.setDecorated(decorated);
     final _FlView view = _FlView();
     final int viewId = view.getId();
     rootView = WidgetsBinding.instance.platformDispatcher.views.firstWhere(

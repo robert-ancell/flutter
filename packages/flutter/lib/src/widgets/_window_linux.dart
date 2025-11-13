@@ -188,6 +188,15 @@ const int _GDK_WINDOW_STATE_ICONIFIED = 1 << 1;
 const int _GDK_WINDOW_STATE_MAXIMIZED = 1 << 2;
 const int _GDK_WINDOW_STATE_FULLSCREEN = 1 << 4;
 
+//const int _GDK_WINDOW_EDGE_NORTH_WEST = 0;
+//const int _GDK_WINDOW_EDGE_NORTH = 1;
+//const int _GDK_WINDOW_EDGE_NORTH_EAST = 2;
+//const int _GDK_WINDOW_EDGE_WEST = 3;
+//const int _GDK_WINDOW_EDGE_EAST = 4;
+//const int _GDK_WINDOW_EDGE_SOUTH_WEST = 5;
+//const int _GDK_WINDOW_EDGE_SOUTH = 6;
+//const int _GDK_WINDOW_EDGE_SOUTH_EAST = 7;
+
 /// Wraps GtkWindow
 class _GtkWindow extends _GtkContainer {
   /// Create a new GtkWindow
@@ -292,6 +301,16 @@ class _GtkWindow extends _GtkContainer {
     return _gtkWindowIsActive(instance);
   }
 
+  /// Start moving a window.
+  void beginMoveDrag(int button, int rootX, int rootY, int timestamp) {
+    _gtkWindowBeginMoveDrag(instance, button, rootX, rootY, timestamp);
+  }
+
+  /// Start resizing a window.
+  void beginResizeDrag(int button, int edge, int rootX, int rootY, int timestamp) {
+    _gtkWindowBeginResizeDrag(instance, edge, button, rootX, rootY, timestamp);
+  }
+
   @ffi.Native<ffi.Pointer<ffi.NativeType> Function(ffi.Int)>(symbol: 'gtk_window_new')
   external static ffi.Pointer<ffi.NativeType> _gtkWindowNew(int type);
 
@@ -373,7 +392,30 @@ class _GtkWindow extends _GtkContainer {
   );
 
   @ffi.Native<ffi.Bool Function(ffi.Pointer<ffi.NativeType>)>(symbol: 'gtk_window_is_active')
-  external static bool _gtkWindowIsActive(ffi.Pointer<ffi.NativeType> widget);
+  external static bool _gtkWindowIsActive(ffi.Pointer<ffi.NativeType> window);
+
+  @ffi.Native<
+    ffi.Void Function(ffi.Pointer<ffi.NativeType>, ffi.Int, ffi.Int, ffi.Int, ffi.Uint32)
+  >(symbol: 'gtk_window_begin_move_drag')
+  external static void _gtkWindowBeginMoveDrag(
+    ffi.Pointer<ffi.NativeType> window,
+    int button,
+    int rootX,
+    int rootY,
+    int timestamp,
+  );
+
+  @ffi.Native<
+    ffi.Void Function(ffi.Pointer<ffi.NativeType>, ffi.Int, ffi.Int, ffi.Int, ffi.Int, ffi.Uint32)
+  >(symbol: 'gtk_window_begin_resize_drag')
+  external static void _gtkWindowBeginResizeDrag(
+    ffi.Pointer<ffi.NativeType> window,
+    int edge,
+    int button,
+    int rootX,
+    int rootY,
+    int timestamp,
+  );
 }
 
 /// Wraps FlView

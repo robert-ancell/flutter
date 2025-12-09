@@ -16,7 +16,7 @@
 # periodically to include upstream security fixes from Debian.
 # This script looks at sysroots.json next to it to find the name of a .tar.xz
 # to download and the location to extract it to. The extracted sysroot could for
-# example be in build/linux/debian_bullseye_amd64-sysroot/.
+# example be in build/linux/debian_trixie_amd64-sysroot/.
 import glob
 import hashlib
 import json
@@ -39,13 +39,13 @@ ARCH_TRANSLATIONS = {
     "ppc64le": "ppc64el",
 }
 DEFAULT_TARGET_PLATFORMS = {
-    "amd64": "bullseye",
-    "i386": "bullseye",
-    "armhf": "bullseye",
-    "arm64": "bullseye",
-    "mipsel": "bullseye",
-    "mips64el": "bullseye",
-    "ppc64el": "bullseye",
+    "amd64": "trixie",
+    "i386": "trixie",
+    "armhf": "trixie",
+    "arm64": "trixie",
+    "mipsel": "trixie",
+    "mips64el": "trixie",
+    "ppc64el": "trixie",
     "riscv64": "trixie",
 }
 DEFAULT_SYSROOTS_PATH = os.path.join(os.path.relpath(SCRIPT_DIR, SRC_DIR),

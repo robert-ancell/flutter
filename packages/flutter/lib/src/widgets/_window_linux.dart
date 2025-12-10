@@ -217,6 +217,11 @@ class _GtkWindow extends _GtkContainer {
     _gtkWindowSetTypeHint(instance, hint);
   }
 
+  /// Sets if this window has decorations (titlebar, borders, shadow).
+  void setDecorated(bool decorated) {
+    _gtkWindowSetDecorated(instance, decorated);
+  }
+
   /// Sets the title of the window.
   void setTitle(String title) {
     final ffi.Pointer<ffi.Uint8> titleBuffer = _stringToNative(title);
@@ -337,6 +342,11 @@ class _GtkWindow extends _GtkContainer {
     ffi.Pointer<ffi.NativeType> window,
     ffi.Pointer<ffi.Uint8> title,
   );
+
+  @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.NativeType>, ffi.Bool)>(
+    symbol: 'gtk_window_set_decorated',
+  )
+  external static void _gtkWindowSetDecorated(ffi.Pointer<ffi.NativeType> window, bool decorated);
 
   @ffi.Native<ffi.Pointer<ffi.Uint8> Function(ffi.Pointer<ffi.NativeType>)>(
     symbol: 'gtk_window_get_title',
@@ -987,6 +997,7 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
     }
 
     _window.setTypeHint(_GDK_WINDOW_TYPE_HINT_TOOLTIP);
+    _window.setDecorated(false);
     final _GtkWindow? parentWindow = owner._windows[parent.rootView.viewId];
     if (parentWindow != null) {
       _window.setTransientFor(parentWindow);

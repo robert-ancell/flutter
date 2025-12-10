@@ -994,18 +994,8 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
 
     _windowMonitor = _FlWindowMonitor(
       _window,
-      // onConfigure
-      notifyListeners,
-      // onStateChanged
-      () {},
-      // onIsActiveNotify
-      () {},
-      // onTitleNotify
-      () {},
-      // onClose
-      () {},
-      // onDestroy
-      _delegate.onWindowDestroyed,
+      onConfigure: notifyListeners,
+      onDestroy: _delegate.onWindowDestroyed,
     );
     setConstraints(preferredConstraints);
     final _FlView view = _FlView();

@@ -250,6 +250,12 @@ static void fl_view_present_layers(FlRenderable* renderable,
                                    size_t layers_count) {
   FlView* self = FL_VIEW(renderable);
 
+  GtkWidget* toplevel_window = gtk_widget_get_toplevel(GTK_WIDGET(self));
+  gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
+  gtk_window_resize(GTK_WINDOW(toplevel_window),
+                    layers[0]->size.width / scale_factor,
+                    layers[0]->size.height / scale_factor);
+
   fl_compositor_present_layers(self->compositor, layers, layers_count);
 
   // Perform the redraw in the GTK thead.

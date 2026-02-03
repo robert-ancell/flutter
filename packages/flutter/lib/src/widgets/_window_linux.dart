@@ -103,6 +103,11 @@ class _GtkContainer extends _GtkWidget {
 class _GtkWidget extends _GObject {
   const _GtkWidget(super.instance);
 
+  /// Creates the GDK resources associated with a widget.
+  void realize() {
+    _gtkWidgetRealize(instance);
+  }
+
   /// Show the widget (defaults to hidden).
   void show() {
     _gtkWidgetShow(instance);
@@ -118,6 +123,9 @@ class _GtkWidget extends _GObject {
     _gtkWindowDestroy(instance);
   }
 
+  @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.NativeType>)>(symbol: 'gtk_widget_realize')
+  external static void _gtkWidgetRealize(ffi.Pointer<ffi.NativeType> widget);
+
   @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.NativeType>)>(symbol: 'gtk_widget_show')
   external static void _gtkWidgetShow(ffi.Pointer<ffi.NativeType> widget);
 
@@ -132,6 +140,25 @@ class _GtkWidget extends _GObject {
   external static void _gtkWindowDestroy(ffi.Pointer<ffi.NativeType> widget);
 }
 
+/// Wraps GdkRectangle
+final class _GdkRectangle extends ffi.Struct {
+  factory _GdkRectangle() {
+    return ffi.Struct.create();
+  }
+
+  @ffi.Int()
+  external int x;
+
+  @ffi.Int()
+  external int y;
+
+  @ffi.Int()
+  external int width;
+
+  @ffi.Int()
+  external int height;
+}
+
 /// Wraps GdkWindow
 class _GdkWindow extends _GObject {
   const _GdkWindow(super.instance);
@@ -141,11 +168,64 @@ class _GdkWindow extends _GObject {
     return _gdkWindowGetState(instance);
   }
 
+  /// Moves window to rect, aligning their anchor points.
+  void moveToRect(
+    int x,
+    int y,
+    int width,
+    int height,
+    int rectAnchor,
+    int windowAnchor,
+    int anchorHints,
+    int rectAnchorDx,
+    int rectAnchorDy,
+  ) {
+    final ffi.Pointer<_GdkRectangle> rect = _gMalloc0(
+      ffi.sizeOf<_GdkRectangle>(),
+    ).cast<_GdkRectangle>();
+    final _GdkRectangle r = rect.ref;
+    r.x = x;
+    r.y = y;
+    r.width = width;
+    r.height = height;
+    _gdkWindowMoveToRect(
+      instance,
+      rect,
+      rectAnchor,
+      windowAnchor,
+      anchorHints,
+      rectAnchorDx,
+      rectAnchorDy,
+    );
+    _gFree(rect);
+  }
+
   @ffi.Native<ffi.Int Function(ffi.Pointer<ffi.NativeType>)>(symbol: 'gdk_window_get_state')
   external static int _gdkWindowGetState(ffi.Pointer<ffi.NativeType> window);
+
+  @ffi.Native<
+    ffi.Void Function(
+      ffi.Pointer<ffi.NativeType>,
+      ffi.Pointer<ffi.NativeType>,
+      ffi.Int,
+      ffi.Int,
+      ffi.Int,
+      ffi.Int,
+      ffi.Int,
+    )
+  >(symbol: 'gdk_window_move_to_rect')
+  external static void _gdkWindowMoveToRect(
+    ffi.Pointer<ffi.NativeType> window,
+    ffi.Pointer<ffi.NativeType> rect,
+    int rectAnchor,
+    int windowAnchor,
+    int anchorHints,
+    int rectAnchorDx,
+    int rectAnchorDy,
+  );
 }
 
-/// Wrapds GdkGeometry
+/// Wraps GdkGeometry
 final class _GdkGeometry extends ffi.Struct {
   factory _GdkGeometry() {
     return ffi.Struct.create();
@@ -1002,6 +1082,18 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
     if (parentWindow != null) {
       _window.setTransientFor(parentWindow);
     }
+    _window.realize();
+    _window.getWindow().moveToRect(
+      anchorRect.left.toInt(),
+      anchorRect.top.toInt(),
+      anchorRect.width.toInt(),
+      anchorRect.height.toInt(),
+      1,
+      1,
+      0,
+      0,
+      0,
+    );
 
     _windowMonitor = _FlWindowMonitor(
       _window,

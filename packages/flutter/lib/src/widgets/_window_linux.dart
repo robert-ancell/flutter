@@ -1058,6 +1058,29 @@ class DialogWindowControllerLinux extends DialogWindowController {
   }
 }
 
+int _toGdkGravity(WindowPositionerAnchor anchor) {
+  switch (anchor) {
+    case WindowPositionerAnchor.center:
+      return _GDK_GRAVITY_CENTER;
+    case WindowPositionerAnchor.top:
+      return _GDK_GRAVITY_NORTH;
+    case WindowPositionerAnchor.bottom:
+      return _GDK_GRAVITY_SOUTH;
+    case WindowPositionerAnchor.left:
+      return _GDK_GRAVITY_WEST;
+    case WindowPositionerAnchor.right:
+      return _GDK_GRAVITY_EAST;
+    case WindowPositionerAnchor.topLeft:
+      return _GDK_GRAVITY_NORTH_WEST;
+    case WindowPositionerAnchor.bottomLeft:
+      return _GDK_GRAVITY_SOUTH_WEST;
+    case WindowPositionerAnchor.topRight:
+      return _GDK_GRAVITY_NORTH_EAST;
+    case WindowPositionerAnchor.bottomRight:
+      return _GDK_GRAVITY_SOUTH_EAST;
+  }
+}
+
 /// Implementation of [TooltipWindowController] for the Linux platform.
 ///
 /// {@macro flutter.widgets.windowing.experimental}
@@ -1103,7 +1126,6 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
     int rectAnchor = _GDK_GRAVITY_NORTH_WEST;
     int windowAnchor = _GDK_GRAVITY_NORTH_WEST;
     int anchorHints = 0;
-    final offset = positioner.offset;
     final constraintAdjustment = positioner.constraintAdjustment;
     if (constraintAdjustment.flipX) {
       anchorHints |= GDK_ANCHOR_FLIP_X;
@@ -1128,11 +1150,11 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
       anchorRect.top.toInt(),
       anchorRect.width.toInt(),
       anchorRect.height.toInt(),
-      rectAnchor,
-      windowAnchor,
+      _toGdkGravity(positioner.parentAnchor),
+      _toGdkGravity(positioner.childAnchor),
       anchorHints,
-      offset.dx.toInt(),
-      offset.dy.toInt(),
+      positioner.offset.dx.toInt(),
+      positioner.offset.dy.toInt(),
     );
 
     _windowMonitor = _FlWindowMonitor(

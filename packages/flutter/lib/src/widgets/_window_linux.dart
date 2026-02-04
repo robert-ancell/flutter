@@ -159,6 +159,23 @@ final class _GdkRectangle extends ffi.Struct {
   external int height;
 }
 
+const int _GDK_GRAVITY_NORTH_WEST = 1;
+const int _GDK_GRAVITY_NORTH = 2;
+const int _GDK_GRAVITY_NORTH_EAST = 3;
+const int _GDK_GRAVITY_WEST = 4;
+const int _GDK_GRAVITY_CENTER = 5;
+const int _GDK_GRAVITY_EAST = 6;
+const int _GDK_GRAVITY_SOUTH_WEST = 7;
+const int _GDK_GRAVITY_SOUTH = 8;
+const int _GDK_GRAVITY_SOUTH_EAST = 9;
+
+const int GDK_ANCHOR_FLIP_X = 1;
+const int GDK_ANCHOR_FLIP_Y = 2;
+const int GDK_ANCHOR_SLIDE_X = 4;
+const int GDK_ANCHOR_SLIDE_Y = 8;
+const int GDK_ANCHOR_RESIZE_X = 16;
+const int GDK_ANCHOR_RESIZE_Y = 32;
+
 /// Wraps GdkWindow
 class _GdkWindow extends _GObject {
   const _GdkWindow(super.instance);
@@ -1083,16 +1100,39 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
       _window.setTransientFor(parentWindow);
     }
     _window.realize();
+    int rectAnchor = _GDK_GRAVITY_NORTH_WEST;
+    int windowAnchor = _GDK_GRAVITY_NORTH_WEST;
+    int anchorHints = 0;
+    final offset = positioner.offset;
+    final constraintAdjustment = positioner.constraintAdjustment;
+    if (constraintAdjustment.flipX) {
+      anchorHints |= GDK_ANCHOR_FLIP_X;
+    }
+    if (constraintAdjustment.flipY) {
+      anchorHints |= GDK_ANCHOR_FLIP_Y;
+    }
+    if (constraintAdjustment.slideX) {
+      anchorHints |= GDK_ANCHOR_SLIDE_X;
+    }
+    if (constraintAdjustment.slideY) {
+      anchorHints |= GDK_ANCHOR_SLIDE_Y;
+    }
+    if (constraintAdjustment.resizeX) {
+      anchorHints |= GDK_ANCHOR_RESIZE_X;
+    }
+    if (constraintAdjustment.resizeY) {
+      anchorHints |= GDK_ANCHOR_RESIZE_Y;
+    }
     _window.getWindow().moveToRect(
       anchorRect.left.toInt(),
       anchorRect.top.toInt(),
       anchorRect.width.toInt(),
       anchorRect.height.toInt(),
-      1,
-      1,
-      0,
-      0,
-      0,
+      rectAnchor,
+      windowAnchor,
+      anchorHints,
+      offset.dx.toInt(),
+      offset.dy.toInt(),
     );
 
     _windowMonitor = _FlWindowMonitor(

@@ -1058,7 +1058,7 @@ class DialogWindowControllerLinux extends DialogWindowController {
   }
 }
 
-int _toGdkGravity(WindowPositionerAnchor anchor) {
+int _anchorToGdkGravity(WindowPositionerAnchor anchor) {
   switch (anchor) {
     case WindowPositionerAnchor.center:
       return _GDK_GRAVITY_CENTER;
@@ -1150,8 +1150,8 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
       anchorRect.top.toInt(),
       anchorRect.width.toInt(),
       anchorRect.height.toInt(),
-      _toGdkGravity(positioner.parentAnchor),
-      _toGdkGravity(positioner.childAnchor),
+      _anchorToGdkGravity(positioner.parentAnchor),
+      _anchorToGdkGravity(positioner.childAnchor),
       anchorHints,
       positioner.offset.dx.toInt(),
       positioner.offset.dy.toInt(),

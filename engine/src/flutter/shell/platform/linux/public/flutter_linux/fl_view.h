@@ -88,6 +88,15 @@ int64_t fl_view_get_id(FlView* view);
  */
 void fl_view_set_background_color(FlView* view, const GdkRGBA* color);
 
+/**
+ * fl_view_set_sized_to_content:
+ * @view: an #FlView.
+ * @sized_to_content: TRUE if the view size should be controlled by Flutter.
+ *
+ * Set if this view size should be controlled by Flutter.
+ */
+void fl_view_set_sized_to_content(FlView* view, gboolean sized_to_content);
+
 G_END_DECLS
 
 #endif  // FLUTTER_SHELL_PLATFORM_LINUX_PUBLIC_FLUTTER_LINUX_FL_VIEW_H_

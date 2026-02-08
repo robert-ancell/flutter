@@ -47,6 +47,12 @@ TEST(FlCompositorOpenGLTest, Render) {
     fl_compositor_present_layers(FL_COMPOSITOR(compositor), layers, 1);
   }).join();
 
+  size_t frame_width, frame_height;
+  fl_compositor_get_frame_size(FL_COMPOSITOR(compositor), &frame_width,
+                               &frame_height);
+  EXPECT_EQ(frame_width, width);
+  EXPECT_EQ(frame_height, height);
+
   // Render presented layer.
   int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, width);
   g_autofree unsigned char* image_data =

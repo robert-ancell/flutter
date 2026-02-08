@@ -68,6 +68,21 @@ static gboolean fl_compositor_software_present_layers(
   return TRUE;
 }
 
+static void fl_compositor_software_get_frame_size(FlCompositor* compositor,
+                                                  size_t* width,
+                                                  size_t* height) {
+  FlCompositorSoftware* self = FL_COMPOSITOR_SOFTWARE(compositor);
+
+  g_autoptr(GMutexLocker) locker = g_mutex_locker_new(&self->frame_mutex);
+
+  if (width != nullptr) {
+    *width = self->width;
+  }
+  if (height != nullptr) {
+    *height = self->height;
+  }
+}
+
 static gboolean fl_compositor_software_render(FlCompositor* compositor,
                                               cairo_t* cr,
                                               GdkWindow* window) {
@@ -113,6 +128,8 @@ static void fl_compositor_software_class_init(
     FlCompositorSoftwareClass* klass) {
   FL_COMPOSITOR_CLASS(klass)->present_layers =
       fl_compositor_software_present_layers;
+  FL_COMPOSITOR_CLASS(klass)->get_frame_size =
+      fl_compositor_software_get_frame_size;
   FL_COMPOSITOR_CLASS(klass)->render = fl_compositor_software_render;
 
   G_OBJECT_CLASS(klass)->dispose = fl_compositor_software_dispose;

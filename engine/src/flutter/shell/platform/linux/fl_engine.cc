@@ -920,6 +920,11 @@ FlutterViewId fl_engine_add_view(FlEngine* self,
   metrics.pixel_ratio = pixel_ratio;
   metrics.display_id = display_id;
   metrics.view_id = view_id;
+  metrics.has_constraints = false;
+  metrics.min_width_constraint = 0;
+  metrics.min_height_constraint = 0;
+  metrics.max_width_constraint = 0;
+  metrics.max_height_constraint = 0;
   FlutterAddViewInfo info;
   info.struct_size = sizeof(FlutterAddViewInfo);
   info.view_id = view_id;
@@ -1113,7 +1118,11 @@ void fl_engine_send_window_metrics_event(FlEngine* self,
                                          FlutterViewId view_id,
                                          size_t width,
                                          size_t height,
-                                         double pixel_ratio) {
+                                         double pixel_ratio,
+                                         size_t min_width,
+                                         size_t min_height,
+                                         size_t max_width,
+                                         size_t max_height) {
   g_return_if_fail(FL_IS_ENGINE(self));
 
   if (self->engine == nullptr) {
@@ -1127,6 +1136,11 @@ void fl_engine_send_window_metrics_event(FlEngine* self,
   event.pixel_ratio = pixel_ratio;
   event.display_id = display_id;
   event.view_id = view_id;
+  event.has_constraints = true;
+  event.min_width_constraint = min_width;
+  event.min_height_constraint = min_height;
+  event.max_width_constraint = max_width;
+  event.max_height_constraint = max_height;
   if (self->embedder_api.SendWindowMetricsEvent(self->engine, &event) !=
       kSuccess) {
     g_warning("Failed to send window metrics");

@@ -95,7 +95,8 @@ TEST(FlEngineTest, WindowMetrics) {
         return kSuccess;
       }));
 
-  fl_engine_send_window_metrics_event(engine, 99, 1, 3840, 2160, 2.0);
+  fl_engine_send_window_metrics_event(engine, 99, 1, 3840, 2160, 2.0, 3840,
+                                      2160, 3840, 2160);
 
   EXPECT_TRUE(called);
 }

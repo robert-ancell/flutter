@@ -21,6 +21,10 @@ struct _FlCompositorClass {
                              const FlutterLayer** layers,
                              size_t layers_count);
 
+  void (*get_frame_size)(FlCompositor* compositor,
+                         size_t* width,
+                         size_t* height);
+
   gboolean (*render)(FlCompositor* compositor, cairo_t* cr, GdkWindow* window);
 };
 
@@ -43,6 +47,18 @@ struct _FlCompositorClass {
 gboolean fl_compositor_present_layers(FlCompositor* compositor,
                                       const FlutterLayer** layers,
                                       size_t layers_count);
+
+/**
+ * fl_compositor_get_frame_size:
+ * @compositor: an #FlCompositor.
+ * @width: location to write frame width in pixels.
+ * @height: location to write frame height in pixels.
+ *
+ * Get the size of the layer ready for rendering.
+ */
+void fl_compositor_get_frame_size(FlCompositor* compositor,
+                                  size_t* width,
+                                  size_t* height);
 
 /**
  * fl_compositor_render:

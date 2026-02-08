@@ -250,9 +250,13 @@ void fl_engine_set_platform_message_handler(
  * @engine: an #FlEngine.
  * @display_id: the display this view is rendering on.
  * @view_id: the view that the event occured on.
- * @width: width of the window in pixels.
- * @height: height of the window in pixels.
- * @pixel_ratio: scale factor for window.
+ * @width: width of the view in pixels.
+ * @height: height of the view in pixels.
+ * @pixel_ratio: scale factor for view.
+ * @min_width: minimum width of view in pixels.
+ * @max_width: maximum width of view in pixels.
+ * @min_height: minimum height of view in pixels.
+ * @max_height: maximum height of view in pixels.
  *
  * Sends a window metrics event to the engine.
  */
@@ -261,7 +265,11 @@ void fl_engine_send_window_metrics_event(FlEngine* engine,
                                          FlutterViewId view_id,
                                          size_t width,
                                          size_t height,
-                                         double pixel_ratio);
+                                         double pixel_ratio,
+                                         size_t min_width,
+                                         size_t min_height,
+                                         size_t max_width,
+                                         size_t max_height);
 
 /**
  * fl_engine_send_mouse_pointer_event:

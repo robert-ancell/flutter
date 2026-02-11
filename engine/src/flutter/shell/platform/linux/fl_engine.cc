@@ -1141,6 +1141,7 @@ void fl_engine_send_window_metrics_event(FlEngine* self,
   event.min_height_constraint = min_height;
   event.max_width_constraint = max_width;
   event.max_height_constraint = max_height;
+  g_printerr("SendWindowMetricsEvent width=%zd<%zd<%zd height=%zd<%zd<%zd\n", min_width, width, max_width, min_height, height, max_height);
   if (self->embedder_api.SendWindowMetricsEvent(self->engine, &event) !=
       kSuccess) {
     g_warning("Failed to send window metrics");

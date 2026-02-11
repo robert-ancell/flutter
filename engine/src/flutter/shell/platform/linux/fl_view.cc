@@ -243,8 +243,6 @@ static void handle_geometry_changed(FlView* self, gboolean force) {
 static void view_added_cb(GObject* object,
                           GAsyncResult* result,
                           gpointer user_data) {
-  FlView* self = FL_VIEW(user_data);
-
   g_autoptr(GError) error = nullptr;
   if (!fl_engine_add_view_finish(FL_ENGINE(object), result, &error)) {
     if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
@@ -255,8 +253,6 @@ static void view_added_cb(GObject* object,
     // FIXME: Show on the GLArea
     return;
   }
-
-  handle_geometry_changed(self);
 }
 
 // Called when the engine updates accessibility.

@@ -60,6 +60,17 @@ FlView* fl_view_new(FlDartProject* project);
 FlView* fl_view_new_for_engine(FlEngine* engine);
 
 /**
+ * fl_view_new_sized_to_content:
+ * @engine: an #FlEngine.
+ *
+ * Creates a widget to show a window in a Flutter application.
+ * The engine must be not be headless. FIXME
+ *
+ * Returns: a new #FlView.
+ */
+FlView* fl_view_new_sized_to_content(FlEngine* engine);
+
+/**
  * fl_view_get_engine:
  * @view: an #FlView.
  *
@@ -87,15 +98,6 @@ int64_t fl_view_get_id(FlView* view);
  * Set the background color for Flutter (defaults to black).
  */
 void fl_view_set_background_color(FlView* view, const GdkRGBA* color);
-
-/**
- * fl_view_set_sized_to_content:
- * @view: an #FlView.
- * @sized_to_content: TRUE if the view size should be controlled by Flutter.
- *
- * Set if this view size should be controlled by Flutter.
- */
-void fl_view_set_sized_to_content(FlView* view, gboolean sized_to_content);
 
 G_END_DECLS
 

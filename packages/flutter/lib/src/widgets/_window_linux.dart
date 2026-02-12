@@ -513,24 +513,24 @@ class _GtkWindow extends _GtkContainer {
 /// Wraps FlView
 class _FlView extends _GtkWidget {
   /// Create a new FlView widget.
-  _FlView()
+  _FlView({bool isSizedToContent = false})
     : super(
-        _flViewNewForEngine(
-          ffi.Pointer<ffi.NativeType>.fromAddress(
-            WidgetsBinding.instance.platformDispatcher.engineId!,
-          ),
-        ),
+        isSizedToContent
+            ? _flViewNewSizedToContent(
+                ffi.Pointer<ffi.NativeType>.fromAddress(
+                  WidgetsBinding.instance.platformDispatcher.engineId!,
+                ),
+              )
+            : _flViewNewForEngine(
+                ffi.Pointer<ffi.NativeType>.fromAddress(
+                  WidgetsBinding.instance.platformDispatcher.engineId!,
+                ),
+              ),
       );
 
   /// Get the ID for the Flutter view being shown in this widget.
   int getId() {
     return _flViewGetId(instance);
-  }
-
-  /// FIXME
-  void setSizedToContent(bool isSizedToContent)
-  {
-    _flViewSetSizedToContent(instance, isSizedToContent);
   }
 
   @ffi.Native<ffi.Pointer<ffi.NativeType> Function(ffi.Pointer<ffi.NativeType>)>(
@@ -540,11 +540,15 @@ class _FlView extends _GtkWidget {
     ffi.Pointer<ffi.NativeType> engine,
   );
 
+  @ffi.Native<ffi.Pointer<ffi.NativeType> Function(ffi.Pointer<ffi.NativeType>)>(
+    symbol: 'fl_view_new_sized_to_content',
+  )
+  external static ffi.Pointer<ffi.NativeType> _flViewNewSizedToContent(
+    ffi.Pointer<ffi.NativeType> engine,
+  );
+
   @ffi.Native<ffi.Int64 Function(ffi.Pointer<ffi.NativeType>)>(symbol: 'fl_view_get_id')
   external static int _flViewGetId(ffi.Pointer<ffi.NativeType> view);
-
-  @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.NativeType>, ffi.Bool)>(symbol: 'fl_view_set_sized_to_content')
-  external static void _flViewSetSizedToContent(ffi.Pointer<ffi.NativeType> view, bool sizedToContent);
 }
 
 /// Wraps FlWindowMonitor (helper object for handling signals from GtkWindow).
@@ -1174,8 +1178,7 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
       onDestroy: _delegate.onWindowDestroyed,
     );
     setConstraints(preferredConstraints);
-    final _FlView view = _FlView();
-    view.setSizedToContent(isSizedToContent);
+    final _FlView view = _FlView(isSizedToContent: isSizedToContent);
     final int viewId = view.getId();
     rootView = WidgetsBinding.instance.platformDispatcher.views.firstWhere(
       (FlutterView view) => view.viewId == viewId,

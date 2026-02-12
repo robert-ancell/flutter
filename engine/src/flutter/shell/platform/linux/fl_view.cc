@@ -226,18 +226,15 @@ static void handle_geometry_changed(FlView* self, gboolean force) {
   size_t min_width = width, min_height = height;
   size_t max_width = width, max_height = height;
   if (self->sized_to_content) {
-      min_width = 0;
-      min_height = 0;
-      width = 0;
-      height = 0;
-      max_width = 1000; // FIXME
-      max_height = 1000;
+    min_width = 0;
+    min_height = 0;
+    max_width = 1000;  // FIXME
+    max_height = 1000;
   }
   fl_engine_send_window_metrics_event(
-      self->engine, display_id, self->view_id, width * scale_factor,
-      height * scale_factor, scale_factor, min_width * scale_factor,
+      self->engine, display_id, self->view_id, min_width * scale_factor,
       min_height * scale_factor, max_width * scale_factor,
-      max_height * scale_factor);
+      max_height * scale_factor, scale_factor);
 }
 
 static void view_added_cb(GObject* object,
@@ -843,7 +840,26 @@ G_MODULE_EXPORT FlView* fl_view_new_for_engine(FlEngine* engine) {
 
   self->engine = FL_ENGINE(g_object_ref(engine));
 
-  self->view_id = fl_engine_add_view(engine, FL_RENDERABLE(self), 1, 1, 1.0,
+  size_t min_width = 1, min_height = 1, max_width = 1, max_height = 1;
+  self->view_id = fl_engine_add_view(engine, FL_RENDERABLE(self), min_width,
+                                     min_height, max_width, max_height, 1.0,
+                                     self->cancellable, view_added_cb, self);
+
+  setup_engine(self);
+
+  return self;
+}
+
+// FIXME: Deduplicate
+G_MODULE_EXPORT FlView* fl_view_new_sized_to_content(FlEngine* engine) {
+  FlView* self = FL_VIEW(g_object_new(fl_view_get_type(), nullptr));
+
+  self->engine = FL_ENGINE(g_object_ref(engine));
+
+  self->sized_to_content = TRUE;
+  size_t min_width = 0, min_height = 0, max_width = 1000, max_height = 1000;
+  self->view_id = fl_engine_add_view(engine, FL_RENDERABLE(self), min_width,
+                                     min_height, max_width, max_height, 1.0,
                                      self->cancellable, view_added_cb, self);
 
   setup_engine(self);
@@ -872,10 +888,4 @@ G_MODULE_EXPORT void fl_view_set_background_color(FlView* self,
 FlViewAccessible* fl_view_get_accessible(FlView* self) {
   g_return_val_if_fail(FL_IS_VIEW(self), nullptr);
   return self->view_accessible;
-}
-
-G_MODULE_EXPORT void fl_view_set_sized_to_content(FlView* self,
-                                                  gboolean sized_to_content) {
-  g_return_if_fail(FL_IS_VIEW(self));
-  self->sized_to_content = sized_to_content;
 }

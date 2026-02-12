@@ -527,6 +527,12 @@ class _FlView extends _GtkWidget {
     return _flViewGetId(instance);
   }
 
+  /// FIXME
+  void setSizedToContent(bool isSizedToContent)
+  {
+    _flViewSetSizedToContent(instance, isSizedToContent);
+  }
+
   @ffi.Native<ffi.Pointer<ffi.NativeType> Function(ffi.Pointer<ffi.NativeType>)>(
     symbol: 'fl_view_new_for_engine',
   )
@@ -536,6 +542,9 @@ class _FlView extends _GtkWidget {
 
   @ffi.Native<ffi.Int64 Function(ffi.Pointer<ffi.NativeType>)>(symbol: 'fl_view_get_id')
   external static int _flViewGetId(ffi.Pointer<ffi.NativeType> view);
+
+  @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.NativeType>, ffi.Bool)>(symbol: 'fl_view_set_sized_to_content')
+  external static void _flViewSetSizedToContent(ffi.Pointer<ffi.NativeType> view, bool sizedToContent);
 }
 
 /// Wraps FlWindowMonitor (helper object for handling signals from GtkWindow).
@@ -716,6 +725,7 @@ class WindowingOwnerLinux extends WindowingOwner {
       owner: this,
       delegate: delegate,
       preferredConstraints: preferredConstraints,
+      isSizedToContent: isSizedToContent,
       anchorRect: anchorRect,
       positioner: positioner,
       parent: parent,
@@ -1104,6 +1114,7 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
     required WindowingOwnerLinux owner,
     required TooltipWindowControllerDelegate delegate,
     required BoxConstraints preferredConstraints,
+    required bool isSizedToContent,
     required Rect anchorRect,
     required WindowPositioner positioner,
     required BaseWindowController parent,
@@ -1164,6 +1175,7 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
     );
     setConstraints(preferredConstraints);
     final _FlView view = _FlView();
+    view.setSizedToContent(isSizedToContent);
     final int viewId = view.getId();
     rootView = WidgetsBinding.instance.platformDispatcher.views.firstWhere(
       (FlutterView view) => view.viewId == viewId,

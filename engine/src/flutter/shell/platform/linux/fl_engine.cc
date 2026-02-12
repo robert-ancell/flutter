@@ -363,6 +363,8 @@ static bool compositor_present_view_callback(
     const FlutterPresentViewInfo* info) {
   FlEngine* self = static_cast<FlEngine*>(info->user_data);
 
+  g_printerr("PresentView view=%zd %dx%d\n", info->view_id, (int)info->layers[0]->size.width, (int)info->layers[0]->size.height);
+
   GWeakRef* ref = static_cast<GWeakRef*>(g_hash_table_lookup(
       self->renderables_by_view_id, GINT_TO_POINTER(info->view_id)));
   if (ref == nullptr) {
@@ -925,12 +927,19 @@ FlutterViewId fl_engine_add_view(FlEngine* self,
   metrics.min_height_constraint = 0;
   metrics.max_width_constraint = 0;
   metrics.max_height_constraint = 0;
+  // FIXME
+  if (view_id == 2){
+      metrics.has_constraints = true;
+      metrics.max_width_constraint = 1000;
+      metrics.max_height_constraint = 1000;
+  }
   FlutterAddViewInfo info;
   info.struct_size = sizeof(FlutterAddViewInfo);
   info.view_id = view_id;
   info.view_metrics = &metrics;
   info.user_data = g_object_ref(task);
   info.add_view_callback = view_added_cb;
+  g_printerr("AddView view=%zd width=%zd<%zd<%zd height=%zd<%zd<%zd\n", view_id, metrics.min_width_constraint, metrics.width, metrics.max_width_constraint, metrics.min_height_constraint, metrics.height, metrics.max_height_constraint);
   FlutterEngineResult result = self->embedder_api.AddView(self->engine, &info);
   if (result != kSuccess) {
     g_task_return_new_error(task, fl_engine_error_quark(),
@@ -1141,7 +1150,7 @@ void fl_engine_send_window_metrics_event(FlEngine* self,
   event.min_height_constraint = min_height;
   event.max_width_constraint = max_width;
   event.max_height_constraint = max_height;
-  g_printerr("SendWindowMetricsEvent width=%zd<%zd<%zd height=%zd<%zd<%zd\n", min_width, width, max_width, min_height, height, max_height);
+  g_printerr("SendWindowMetricsEvent view=%zd width=%zd<%zd<%zd height=%zd<%zd<%zd\n", view_id, min_width, width, max_width, min_height, height, max_height);
   if (self->embedder_api.SendWindowMetricsEvent(self->engine, &event) !=
       kSuccess) {
     g_warning("Failed to send window metrics");

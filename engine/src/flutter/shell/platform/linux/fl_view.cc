@@ -282,8 +282,6 @@ static void fl_view_present_layers(FlRenderable* renderable,
                                    size_t layers_count) {
   FlView* self = FL_VIEW(renderable);
 
-  g_printerr("fl_view_present_layers %dx%d\n", (int) layers[0]->size.width, (int)layers[0]->size.height);
-
   GtkWidget* toplevel_window = gtk_widget_get_toplevel(GTK_WIDGET(self));
   gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
   gtk_window_resize(GTK_WINDOW(toplevel_window),

@@ -85,7 +85,8 @@ static void fl_compositor_software_get_frame_size(FlCompositor* compositor,
 
 static gboolean fl_compositor_software_render(FlCompositor* compositor,
                                               cairo_t* cr,
-                                              GdkWindow* window) {
+                                              GdkWindow* window,
+                                              gboolean wait_for_frame) {
   FlCompositorSoftware* self = FL_COMPOSITOR_SOFTWARE(compositor);
 
   g_autoptr(GMutexLocker) locker = g_mutex_locker_new(&self->frame_mutex);
@@ -98,7 +99,7 @@ static gboolean fl_compositor_software_render(FlCompositor* compositor,
   gint scale_factor = gdk_window_get_scale_factor(window);
   size_t width = gdk_window_get_width(window) * scale_factor;
   size_t height = gdk_window_get_height(window) * scale_factor;
-  while (self->width != width || self->height != height) {
+  while (wait_for_frame && (self->width != width || self->height != height)) {
     g_mutex_unlock(&self->frame_mutex);
     fl_task_runner_wait(self->task_runner);
     g_mutex_lock(&self->frame_mutex);

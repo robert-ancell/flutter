@@ -382,7 +382,8 @@ static void fl_compositor_opengl_get_frame_size(FlCompositor* compositor,
 
 static gboolean fl_compositor_opengl_render(FlCompositor* compositor,
                                             cairo_t* cr,
-                                            GdkWindow* window) {
+                                            GdkWindow* window,
+                                            gboolean wait_for_frame) {
   FlCompositorOpenGL* self = FL_COMPOSITOR_OPENGL(compositor);
 
   g_mutex_lock(&self->frame_mutex);
@@ -399,7 +400,8 @@ static gboolean fl_compositor_opengl_render(FlCompositor* compositor,
     height = gdk_window_get_height(window) * scale_factor;
     size_t framebuffer_width = fl_framebuffer_get_width(self->framebuffer);
     size_t framebuffer_height = fl_framebuffer_get_height(self->framebuffer);
-    if (framebuffer_width == width && framebuffer_height == height) {
+    if (!wait_for_frame ||
+        (framebuffer_width == width && framebuffer_height == height)) {
       break;
     }
     g_mutex_unlock(&self->frame_mutex);

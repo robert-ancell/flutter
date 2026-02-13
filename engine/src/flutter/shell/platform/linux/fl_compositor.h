@@ -25,7 +25,10 @@ struct _FlCompositorClass {
                          size_t* width,
                          size_t* height);
 
-  gboolean (*render)(FlCompositor* compositor, cairo_t* cr, GdkWindow* window);
+  gboolean (*render)(FlCompositor* compositor,
+                     cairo_t* cr,
+                     GdkWindow* window,
+                     gboolean wait_for_frame);
 };
 
 /**
@@ -65,6 +68,8 @@ void fl_compositor_get_frame_size(FlCompositor* compositor,
  * @compositor: an #FlCompositor.
  * @cr: a Cairo rendering context.
  * @window: window being rendered into.
+ * @wait_for_frame: if the available frame is not the size of the window block
+ * until a new frame is received.
  *
  * Renders the current frame. Called from the GTK thread.
  *
@@ -72,7 +77,8 @@ void fl_compositor_get_frame_size(FlCompositor* compositor,
  */
 gboolean fl_compositor_render(FlCompositor* compositor,
                               cairo_t* cr,
-                              GdkWindow* window);
+                              GdkWindow* window,
+                              gboolean wait_for_frame);
 
 G_END_DECLS
 

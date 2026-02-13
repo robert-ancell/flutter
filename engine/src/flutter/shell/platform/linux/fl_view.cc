@@ -557,8 +557,11 @@ static gboolean draw_cb(FlView* self, cairo_t* cr) {
   gtk_widget_get_allocation(GTK_WIDGET(self->render_area), &allocation);
   gint scale_factor =
       gtk_widget_get_scale_factor(GTK_WIDGET(self->render_area));
-  g_printerr("draw %zd %dx%d\n", self->view_id, allocation.width * scale_factor,
-             allocation.height * scale_factor);
+  if (self->sized_to_content) {
+    g_printerr("draw %zd %dx%d\n", self->view_id,
+               allocation.width * scale_factor,
+               allocation.height * scale_factor);
+  }
 
   paint_background(self, cr);
 
@@ -566,9 +569,10 @@ static gboolean draw_cb(FlView* self, cairo_t* cr) {
     gdk_gl_context_make_current(self->render_context);
   }
 
+  gboolean wait_for_frame = !self->sized_to_content;
   gboolean result = fl_compositor_render(
       self->compositor, cr,
-      gtk_widget_get_window(GTK_WIDGET(self->render_area)));
+      gtk_widget_get_window(GTK_WIDGET(self->render_area)), wait_for_frame);
 
   if (self->render_context) {
     gdk_gl_context_clear_current();
@@ -837,9 +841,9 @@ G_MODULE_EXPORT FlView* fl_view_new_sized_to_content(FlEngine* engine) {
 
   self->sized_to_content = TRUE;
   gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
-  self->view_id = fl_engine_add_view(
-      engine, FL_RENDERABLE(self), 0, 0, G_MAXSIZE, G_MAXSIZE,
-      scale_factor, self->cancellable, view_added_cb, self);
+  self->view_id = fl_engine_add_view(engine, FL_RENDERABLE(self), 0, 0,
+                                     G_MAXSIZE, G_MAXSIZE, scale_factor,
+                                     self->cancellable, view_added_cb, self);
 
   setup_engine(self);
 

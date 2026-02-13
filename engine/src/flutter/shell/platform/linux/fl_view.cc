@@ -830,17 +830,15 @@ G_MODULE_EXPORT FlView* fl_view_new_for_engine(FlEngine* engine) {
   return self;
 }
 
-// FIXME: Deduplicate
 G_MODULE_EXPORT FlView* fl_view_new_sized_to_content(FlEngine* engine) {
   FlView* self = FL_VIEW(g_object_new(fl_view_get_type(), nullptr));
 
   self->engine = FL_ENGINE(g_object_ref(engine));
 
   self->sized_to_content = TRUE;
-  size_t min_width = 0, min_height = 0, max_width = 1000, max_height = 1000;
   gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
   self->view_id = fl_engine_add_view(
-      engine, FL_RENDERABLE(self), min_width, min_height, max_width, max_height,
+      engine, FL_RENDERABLE(self), 0, 0, G_MAXSIZE, G_MAXSIZE,
       scale_factor, self->cancellable, view_added_cb, self);
 
   setup_engine(self);

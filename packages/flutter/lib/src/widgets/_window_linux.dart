@@ -1027,6 +1027,8 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
     }
     _window.realize();
 
+    // TODO(robert-ancell): Apply anchor and positioner.
+
     _windowMonitor = _FlWindowMonitor(
       _window,
       onConfigure: notifyListeners,
@@ -1068,7 +1070,7 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
 
   @override
   void updatePosition({Rect? anchorRect, WindowPositioner? positioner}) {
-    // FIXME
+    // TODO(robert-ancell): Apply anchor and positioner.
   }
 
   @override

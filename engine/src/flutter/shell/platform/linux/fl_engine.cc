@@ -936,10 +936,11 @@ FlutterViewId fl_engine_add_view(FlEngine* self,
   info.view_metrics = &metrics;
   info.user_data = g_object_ref(task);
   info.add_view_callback = view_added_cb;
-  g_printerr("AddView view=%zd width=%zd<%zd<%zd height=%zd<%zd<%zd\n", view_id,
-             metrics.min_width_constraint, metrics.width,
-             metrics.max_width_constraint, metrics.min_height_constraint,
-             metrics.height, metrics.max_height_constraint);
+  g_printerr(
+      "AddView view=%zd width=%zd<%zd<%zd height=%zd<%zd<%zd ratio=%.1f\n",
+      view_id, metrics.min_width_constraint, metrics.width,
+      metrics.max_width_constraint, metrics.min_height_constraint,
+      metrics.height, metrics.max_height_constraint, pixel_ratio);
   FlutterEngineResult result = self->embedder_api.AddView(self->engine, &info);
   if (result != kSuccess) {
     g_task_return_new_error(task, fl_engine_error_quark(),

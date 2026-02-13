@@ -115,14 +115,24 @@ static gboolean redraw_cb(gpointer user_data) {
   // necessary.
   GtkAllocation allocation;
   gtk_widget_get_allocation(GTK_WIDGET(self->render_area), &allocation);
-  gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
+  gint scale_factor =
+      gtk_widget_get_scale_factor(GTK_WIDGET(self->render_area));
   size_t width = allocation.width * scale_factor;
   size_t height = allocation.height * scale_factor;
   size_t frame_width, frame_height;
   fl_compositor_get_frame_size(self->compositor, &frame_width, &frame_height);
   if (self->sized_to_content && width != frame_width &&
       height != frame_height) {
-    gtk_widget_queue_resize(GTK_WIDGET(self->render_area));
+    g_printerr("resize %zd %zdx%zd->%zdx%zd\n", self->view_id, width, height,
+               frame_width, frame_height);
+    gtk_widget_set_size_request(GTK_WIDGET(self->render_area),
+                                frame_width / scale_factor,
+                                frame_height / scale_factor);
+    GtkWidget* toplevel =
+        gtk_widget_get_toplevel(GTK_WIDGET(self->render_area));
+    if (GTK_IS_WINDOW(toplevel)) {
+      gtk_window_resize(GTK_WINDOW(toplevel), 1, 1);
+    }
     return FALSE;
   }
 
@@ -191,9 +201,9 @@ static void setup_cursor(FlView* self) {
 }
 
 // Updates the engine with the current window metrics.
-static void handle_geometry_changed(FlView* self, gboolean force) {
+static void handle_geometry_changed(FlView* self) {
   // No updates required when size controlled by Flutter.
-  if (self->sized_to_content && !force) {
+  if (self->sized_to_content) {
     return;
   }
 
@@ -225,12 +235,6 @@ static void handle_geometry_changed(FlView* self, gboolean force) {
   size_t width = allocation.width, height = allocation.height;
   size_t min_width = width, min_height = height;
   size_t max_width = width, max_height = height;
-  if (self->sized_to_content) {
-    min_width = 0;
-    min_height = 0;
-    max_width = 1000;  // FIXME
-    max_height = 1000;
-  }
   fl_engine_send_window_metrics_event(
       self->engine, display_id, self->view_id, min_width * scale_factor,
       min_height * scale_factor, max_width * scale_factor,
@@ -278,12 +282,6 @@ static void fl_view_present_layers(FlRenderable* renderable,
                                    const FlutterLayer** layers,
                                    size_t layers_count) {
   FlView* self = FL_VIEW(renderable);
-
-  GtkWidget* toplevel_window = gtk_widget_get_toplevel(GTK_WIDGET(self));
-  gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
-  gtk_window_resize(GTK_WINDOW(toplevel_window),
-                    layers[0]->size.width / scale_factor,
-                    layers[0]->size.height / scale_factor);
 
   fl_compositor_present_layers(self->compositor, layers, layers_count);
 
@@ -535,11 +533,11 @@ static void realize_cb(FlView* self) {
 
   setup_cursor(self);
 
-  handle_geometry_changed(self, TRUE);
+  handle_geometry_changed(self);
 }
 
 static void size_allocate_cb(FlView* self) {
-  handle_geometry_changed(self, FALSE);
+  handle_geometry_changed(self);
 }
 
 static void paint_background(FlView* self, cairo_t* cr) {
@@ -555,6 +553,13 @@ static void paint_background(FlView* self, cairo_t* cr) {
 }
 
 static gboolean draw_cb(FlView* self, cairo_t* cr) {
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(GTK_WIDGET(self->render_area), &allocation);
+  gint scale_factor =
+      gtk_widget_get_scale_factor(GTK_WIDGET(self->render_area));
+  g_printerr("draw %zd %dx%d\n", self->view_id, allocation.width * scale_factor,
+             allocation.height * scale_factor);
+
   paint_background(self, cr);
 
   if (self->render_context) {
@@ -576,7 +581,7 @@ static void fl_view_notify(GObject* object, GParamSpec* pspec) {
   FlView* self = FL_VIEW(object);
 
   if (strcmp(pspec->name, "scale-factor") == 0) {
-    handle_geometry_changed(self, FALSE);
+    handle_geometry_changed(self);
   }
 
   if (G_OBJECT_CLASS(fl_view_parent_class)->notify != nullptr) {
@@ -696,30 +701,6 @@ static gboolean fl_view_key_release_event(GtkWidget* widget,
   return handle_key_event(self, key_event);
 }
 
-static void fl_view_get_preferred_width(GtkWidget* widget,
-                                        gint* min_width,
-                                        gint* natural_width) {
-  FlView* self = FL_VIEW(widget);
-  if (self->compositor != nullptr) {
-    size_t frame_width;
-    fl_compositor_get_frame_size(self->compositor, &frame_width, nullptr);
-    gint scale_factor = gtk_widget_get_scale_factor(widget);
-    *min_width = *natural_width = frame_width / scale_factor;
-  }
-}
-
-static void fl_view_get_preferred_height(GtkWidget* widget,
-                                         gint* min_height,
-                                         gint* natural_height) {
-  FlView* self = FL_VIEW(widget);
-  if (self->compositor != nullptr) {
-    size_t frame_height;
-    fl_compositor_get_frame_size(self->compositor, nullptr, &frame_height);
-    gint scale_factor = gtk_widget_get_scale_factor(widget);
-    *min_height = *natural_height = frame_height / scale_factor;
-  }
-}
-
 static void fl_view_class_init(FlViewClass* klass) {
   GObjectClass* object_class = G_OBJECT_CLASS(klass);
   object_class->notify = fl_view_notify;
@@ -730,8 +711,6 @@ static void fl_view_class_init(FlViewClass* klass) {
   widget_class->focus_in_event = fl_view_focus_in_event;
   widget_class->key_press_event = fl_view_key_press_event;
   widget_class->key_release_event = fl_view_key_release_event;
-  widget_class->get_preferred_width = fl_view_get_preferred_width;
-  widget_class->get_preferred_height = fl_view_get_preferred_height;
 
   fl_view_signals[SIGNAL_FIRST_FRAME] =
       g_signal_new("first-frame", fl_view_get_type(), G_SIGNAL_RUN_LAST, 0,
@@ -841,9 +820,10 @@ G_MODULE_EXPORT FlView* fl_view_new_for_engine(FlEngine* engine) {
   self->engine = FL_ENGINE(g_object_ref(engine));
 
   size_t min_width = 1, min_height = 1, max_width = 1, max_height = 1;
-  self->view_id = fl_engine_add_view(engine, FL_RENDERABLE(self), min_width,
-                                     min_height, max_width, max_height, 1.0,
-                                     self->cancellable, view_added_cb, self);
+  gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
+  self->view_id = fl_engine_add_view(
+      engine, FL_RENDERABLE(self), min_width, min_height, max_width, max_height,
+      scale_factor, self->cancellable, view_added_cb, self);
 
   setup_engine(self);
 
@@ -858,9 +838,10 @@ G_MODULE_EXPORT FlView* fl_view_new_sized_to_content(FlEngine* engine) {
 
   self->sized_to_content = TRUE;
   size_t min_width = 0, min_height = 0, max_width = 1000, max_height = 1000;
-  self->view_id = fl_engine_add_view(engine, FL_RENDERABLE(self), min_width,
-                                     min_height, max_width, max_height, 1.0,
-                                     self->cancellable, view_added_cb, self);
+  gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(self));
+  self->view_id = fl_engine_add_view(
+      engine, FL_RENDERABLE(self), min_width, min_height, max_width, max_height,
+      scale_factor, self->cancellable, view_added_cb, self);
 
   setup_engine(self);
 

@@ -123,8 +123,6 @@ static gboolean redraw_cb(gpointer user_data) {
   fl_compositor_get_frame_size(self->compositor, &frame_width, &frame_height);
   if (self->sized_to_content && width != frame_width &&
       height != frame_height) {
-    g_printerr("resize %zd %zdx%zd->%zdx%zd\n", self->view_id, width, height,
-               frame_width, frame_height);
     gtk_widget_set_size_request(GTK_WIDGET(self->render_area),
                                 frame_width / scale_factor,
                                 frame_height / scale_factor);
@@ -553,16 +551,6 @@ static void paint_background(FlView* self, cairo_t* cr) {
 }
 
 static gboolean draw_cb(FlView* self, cairo_t* cr) {
-  GtkAllocation allocation;
-  gtk_widget_get_allocation(GTK_WIDGET(self->render_area), &allocation);
-  gint scale_factor =
-      gtk_widget_get_scale_factor(GTK_WIDGET(self->render_area));
-  if (self->sized_to_content) {
-    g_printerr("draw %zd %dx%d\n", self->view_id,
-               allocation.width * scale_factor,
-               allocation.height * scale_factor);
-  }
-
   paint_background(self, cr);
 
   if (self->render_context) {

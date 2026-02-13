@@ -140,42 +140,6 @@ class _GtkWidget extends _GObject {
   external static void _gtkWindowDestroy(ffi.Pointer<ffi.NativeType> widget);
 }
 
-/// Wraps GdkRectangle
-final class _GdkRectangle extends ffi.Struct {
-  factory _GdkRectangle() {
-    return ffi.Struct.create();
-  }
-
-  @ffi.Int()
-  external int x;
-
-  @ffi.Int()
-  external int y;
-
-  @ffi.Int()
-  external int width;
-
-  @ffi.Int()
-  external int height;
-}
-
-const int _GDK_GRAVITY_NORTH_WEST = 1;
-const int _GDK_GRAVITY_NORTH = 2;
-const int _GDK_GRAVITY_NORTH_EAST = 3;
-const int _GDK_GRAVITY_WEST = 4;
-const int _GDK_GRAVITY_CENTER = 5;
-const int _GDK_GRAVITY_EAST = 6;
-const int _GDK_GRAVITY_SOUTH_WEST = 7;
-const int _GDK_GRAVITY_SOUTH = 8;
-const int _GDK_GRAVITY_SOUTH_EAST = 9;
-
-const int GDK_ANCHOR_FLIP_X = 1;
-const int GDK_ANCHOR_FLIP_Y = 2;
-const int GDK_ANCHOR_SLIDE_X = 4;
-const int GDK_ANCHOR_SLIDE_Y = 8;
-const int GDK_ANCHOR_RESIZE_X = 16;
-const int GDK_ANCHOR_RESIZE_Y = 32;
-
 /// Wraps GdkWindow
 class _GdkWindow extends _GObject {
   const _GdkWindow(super.instance);
@@ -185,61 +149,8 @@ class _GdkWindow extends _GObject {
     return _gdkWindowGetState(instance);
   }
 
-  /// Moves window to rect, aligning their anchor points.
-  void moveToRect(
-    int x,
-    int y,
-    int width,
-    int height,
-    int rectAnchor,
-    int windowAnchor,
-    int anchorHints,
-    int rectAnchorDx,
-    int rectAnchorDy,
-  ) {
-    final ffi.Pointer<_GdkRectangle> rect = _gMalloc0(
-      ffi.sizeOf<_GdkRectangle>(),
-    ).cast<_GdkRectangle>();
-    final _GdkRectangle r = rect.ref;
-    r.x = x;
-    r.y = y;
-    r.width = width;
-    r.height = height;
-    _gdkWindowMoveToRect(
-      instance,
-      rect,
-      rectAnchor,
-      windowAnchor,
-      anchorHints,
-      rectAnchorDx,
-      rectAnchorDy,
-    );
-    _gFree(rect);
-  }
-
   @ffi.Native<ffi.Int Function(ffi.Pointer<ffi.NativeType>)>(symbol: 'gdk_window_get_state')
   external static int _gdkWindowGetState(ffi.Pointer<ffi.NativeType> window);
-
-  @ffi.Native<
-    ffi.Void Function(
-      ffi.Pointer<ffi.NativeType>,
-      ffi.Pointer<ffi.NativeType>,
-      ffi.Int,
-      ffi.Int,
-      ffi.Int,
-      ffi.Int,
-      ffi.Int,
-    )
-  >(symbol: 'gdk_window_move_to_rect')
-  external static void _gdkWindowMoveToRect(
-    ffi.Pointer<ffi.NativeType> window,
-    ffi.Pointer<ffi.NativeType> rect,
-    int rectAnchor,
-    int windowAnchor,
-    int anchorHints,
-    int rectAnchorDx,
-    int rectAnchorDy,
-  );
 }
 
 /// Wraps GdkGeometry
@@ -357,7 +268,7 @@ class _GtkWindow extends _GtkContainer {
     _gFree(geometry);
   }
 
-  /// Resize to [width]x[height].
+  /// Resize to [width]x[height] logical pixels.
   void resize(int width, int height) {
     _gtkWindowResize(instance, width, height);
   }
@@ -392,7 +303,7 @@ class _GtkWindow extends _GtkContainer {
     _gtkWindowUnfullscreen(instance);
   }
 
-  /// Get the current size of the window.
+  /// Get the current size of the window in logical pixels.
   Size getSize() {
     final ffi.Pointer<ffi.Int> width = _gMalloc0(ffi.sizeOf<ffi.Int>()).cast<ffi.Int>();
     final ffi.Pointer<ffi.Int> height = _gMalloc0(ffi.sizeOf<ffi.Int>()).cast<ffi.Int>();
@@ -1072,29 +983,6 @@ class DialogWindowControllerLinux extends DialogWindowController {
   }
 }
 
-int _anchorToGdkGravity(WindowPositionerAnchor anchor) {
-  switch (anchor) {
-    case WindowPositionerAnchor.center:
-      return _GDK_GRAVITY_CENTER;
-    case WindowPositionerAnchor.top:
-      return _GDK_GRAVITY_NORTH;
-    case WindowPositionerAnchor.bottom:
-      return _GDK_GRAVITY_SOUTH;
-    case WindowPositionerAnchor.left:
-      return _GDK_GRAVITY_WEST;
-    case WindowPositionerAnchor.right:
-      return _GDK_GRAVITY_EAST;
-    case WindowPositionerAnchor.topLeft:
-      return _GDK_GRAVITY_NORTH_WEST;
-    case WindowPositionerAnchor.bottomLeft:
-      return _GDK_GRAVITY_SOUTH_WEST;
-    case WindowPositionerAnchor.topRight:
-      return _GDK_GRAVITY_NORTH_EAST;
-    case WindowPositionerAnchor.bottomRight:
-      return _GDK_GRAVITY_SOUTH_EAST;
-  }
-}
-
 /// Implementation of [TooltipWindowController] for the Linux platform.
 ///
 /// {@macro flutter.widgets.windowing.experimental}
@@ -1131,46 +1019,13 @@ class TooltipWindowControllerLinux extends TooltipWindowController {
       throw UnsupportedError(_kWindowingDisabledErrorMessage);
     }
 
-    _window.setTypeHint(_GDK_WINDOW_TYPE_HINT_TOOLTIP);
+    //_window.setTypeHint(_GDK_WINDOW_TYPE_HINT_TOOLTIP);
     _window.setDecorated(false);
     final _GtkWindow? parentWindow = owner._windows[parent.rootView.viewId];
     if (parentWindow != null) {
       _window.setTransientFor(parentWindow);
     }
     _window.realize();
-    int rectAnchor = _GDK_GRAVITY_NORTH_WEST;
-    int windowAnchor = _GDK_GRAVITY_NORTH_WEST;
-    int anchorHints = 0;
-    final constraintAdjustment = positioner.constraintAdjustment;
-    if (constraintAdjustment.flipX) {
-      anchorHints |= GDK_ANCHOR_FLIP_X;
-    }
-    if (constraintAdjustment.flipY) {
-      anchorHints |= GDK_ANCHOR_FLIP_Y;
-    }
-    if (constraintAdjustment.slideX) {
-      anchorHints |= GDK_ANCHOR_SLIDE_X;
-    }
-    if (constraintAdjustment.slideY) {
-      anchorHints |= GDK_ANCHOR_SLIDE_Y;
-    }
-    if (constraintAdjustment.resizeX) {
-      anchorHints |= GDK_ANCHOR_RESIZE_X;
-    }
-    if (constraintAdjustment.resizeY) {
-      anchorHints |= GDK_ANCHOR_RESIZE_Y;
-    }
-    _window.getWindow().moveToRect(
-      anchorRect.left.toInt(),
-      anchorRect.top.toInt(),
-      anchorRect.width.toInt(),
-      anchorRect.height.toInt(),
-      _anchorToGdkGravity(positioner.parentAnchor),
-      _anchorToGdkGravity(positioner.childAnchor),
-      anchorHints,
-      positioner.offset.dx.toInt(),
-      positioner.offset.dy.toInt(),
-    );
 
     _windowMonitor = _FlWindowMonitor(
       _window,

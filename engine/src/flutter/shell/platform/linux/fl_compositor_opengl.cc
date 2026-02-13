@@ -393,15 +393,18 @@ static gboolean fl_compositor_opengl_render(FlCompositor* compositor,
 
   // If frame not ready, then wait for it.
   gint scale_factor = gdk_window_get_scale_factor(window);
-  size_t width = gdk_window_get_width(window) * scale_factor;
-  size_t height = gdk_window_get_height(window) * scale_factor;
-  while (fl_framebuffer_get_width(self->framebuffer) != width ||
-         fl_framebuffer_get_height(self->framebuffer) != height) {
+  size_t width, height;
+  while (true) {
+    width = gdk_window_get_width(window) * scale_factor;
+    height = gdk_window_get_height(window) * scale_factor;
+    size_t framebuffer_width = fl_framebuffer_get_width(self->framebuffer);
+    size_t framebuffer_height = fl_framebuffer_get_height(self->framebuffer);
+    if (framebuffer_width == width && framebuffer_height == height) {
+      break;
+    }
     g_mutex_unlock(&self->frame_mutex);
     fl_task_runner_wait(self->task_runner);
     g_mutex_lock(&self->frame_mutex);
-    width = gdk_window_get_width(window) * scale_factor;
-    height = gdk_window_get_height(window) * scale_factor;
   }
 
   if (fl_framebuffer_get_shareable(self->framebuffer)) {

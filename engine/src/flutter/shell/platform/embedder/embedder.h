@@ -1382,6 +1382,19 @@ typedef struct {
 } FlutterPointerEvent;
 
 typedef enum {
+  kFlutterHitTestResultNone = 1,
+  kFlutterHitTestResultMove,
+  kFlutterHitTestResultResizeTop,
+  kFlutterHitTestResultResizeTopRight,
+  kFlutterHitTestResultResizeRight,
+  kFlutterHitTestResultResizeBottomRight,
+  kFlutterHitTestResultResizeBottom,
+  kFlutterHitTestResultResizeBottomLeft,
+  kFlutterHitTestResultResizeLeft,
+  kFlutterHitTestResultResizeTopLeft,
+} FlutterHitTestResult;
+
+typedef enum {
   kFlutterKeyEventTypeUp = 1,
   kFlutterKeyEventTypeDown,
   kFlutterKeyEventTypeRepeat,
@@ -3051,6 +3064,14 @@ FlutterEngineResult FlutterEngineSendPointerEvent(
     const FlutterPointerEvent* events,
     size_t events_count);
 
+FLUTTER_EXPORT
+FlutterEngineResult FlutterEngineHitTest(FLUTTER_API_SYMBOL(FlutterEngine)
+                                             engine,
+                                         FlutterViewId view_id,
+                                         double x,
+                                         double y,
+                                         FlutterHitTestResult* result_out);
+
 //------------------------------------------------------------------------------
 /// @brief      Sends a key event to the engine. The framework will decide
 ///             whether to handle this event in a synchronous fashion, although
@@ -3640,6 +3661,12 @@ typedef FlutterEngineResult (*FlutterEngineSendPointerEventFnPtr)(
     FLUTTER_API_SYMBOL(FlutterEngine) engine,
     const FlutterPointerEvent* events,
     size_t events_count);
+typedef FlutterEngineResult (*FlutterEngineHitTestFnPtr)(
+    FLUTTER_API_SYMBOL(FlutterEngine) engine,
+    FlutterViewId view_id,
+    double x,
+    double y,
+    FlutterHitTestResult* result_out);
 typedef FlutterEngineResult (*FlutterEngineSendKeyEventFnPtr)(
     FLUTTER_API_SYMBOL(FlutterEngine) engine,
     const FlutterKeyEvent* event,
@@ -3756,6 +3783,7 @@ typedef struct {
   FlutterEngineRunInitializedFnPtr RunInitialized;
   FlutterEngineSendWindowMetricsEventFnPtr SendWindowMetricsEvent;
   FlutterEngineSendPointerEventFnPtr SendPointerEvent;
+  FlutterEngineHitTestFnPtr HitTest;
   FlutterEngineSendKeyEventFnPtr SendKeyEvent;
   FlutterEngineSendPlatformMessageFnPtr SendPlatformMessage;
   FlutterEnginePlatformMessageCreateResponseHandleFnPtr

@@ -2880,6 +2880,25 @@ FlutterEngineResult FlutterEngineSendPointerEvent(
                                   "running Flutter application.");
 }
 
+FLUTTER_EXPORT
+FlutterEngineResult FlutterEngineHitTest(FLUTTER_API_SYMBOL(FlutterEngine)
+                                             engine,
+                                         FlutterViewId view_id,
+                                         double x,
+                                         double y,
+                                         FlutterHitTestResult* result_out) {
+  if (engine == nullptr) {
+    return LOG_EMBEDDER_ERROR(kInvalidArguments, "Engine handle was invalid.");
+  }
+  if (result_out == nullptr) {
+    return LOG_EMBEDDER_ERROR(kInvalidArguments, "Result handle was invalid.");
+  }
+
+  *result_out = kFlutterHitTestResultNone;
+
+  return kSuccess;
+}
+
 static inline flutter::KeyEventType MapKeyEventType(
     FlutterKeyEventType event_kind) {
   switch (event_kind) {
@@ -3743,6 +3762,7 @@ FlutterEngineResult FlutterEngineGetProcAddresses(
   SET_PROC(RunInitialized, FlutterEngineRunInitialized);
   SET_PROC(SendWindowMetricsEvent, FlutterEngineSendWindowMetricsEvent);
   SET_PROC(SendPointerEvent, FlutterEngineSendPointerEvent);
+  SET_PROC(HitTest, FlutterEngineHitTest);
   SET_PROC(SendKeyEvent, FlutterEngineSendKeyEvent);
   SET_PROC(SendPlatformMessage, FlutterEngineSendPlatformMessage);
   SET_PROC(PlatformMessageCreateResponseHandle,

@@ -413,6 +413,22 @@ void fl_engine_send_pointer_pan_zoom_event(FlEngine* engine,
                                            double rotation);
 
 /**
+ * fl_engine_hit_test:
+ * @engine: an #FlEngine.
+ * @view_id: the view to check.
+ * @x: x location of hit test in pixels.
+ * @y: y location of hit test in pixels.
+ *
+ * Check what window controls are on the given view.
+ *
+ * Returns: the result of the hit test.
+ */
+FlutterHitTestResult fl_engine_hit_test(FlEngine* engine,
+                                        FlutterViewId view_id,
+                                        double x,
+                                        double y);
+
+/**
  * fl_engine_send_key_event:
  * @engine: an #FlEngine.
  * @event: key event to send.

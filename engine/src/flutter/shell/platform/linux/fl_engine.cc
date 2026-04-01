@@ -1390,6 +1390,22 @@ void fl_engine_send_pointer_pan_zoom_event(FlEngine* self,
   }
 }
 
+FlutterHitTestResult fl_engine_hit_test(FlEngine* self,
+                                        FlutterViewId view_id,
+                                        double x,
+                                        double y) {
+  g_return_val_if_fail(FL_IS_ENGINE(self), kFlutterHitTestResultNone);
+
+  FlutterHitTestResult result;
+  if (self->embedder_api.HitTest(self->engine, view_id, x, y, &result) !=
+      kSuccess) {
+    g_warning("Failed to perform hit test");
+    return kFlutterHitTestResultNone;
+  }
+
+  return result;
+}
+
 static void send_key_event_cb(bool handled, void* user_data) {
   g_autoptr(GTask) task = G_TASK(user_data);
   gboolean* return_value = g_new0(gboolean, 1);

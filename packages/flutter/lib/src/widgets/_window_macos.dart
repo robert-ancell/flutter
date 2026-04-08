@@ -80,14 +80,12 @@ class WindowingOwnerMacOS extends WindowingOwner {
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
-    bool decorated = true,
   }) {
     final controller = RegularWindowControllerMacOS(
       owner: this,
       delegate: delegate,
       preferredSize: preferredSize,
       title: title,
-      decorated: decorated,
     );
     _activeControllers.add(controller);
     return controller;
@@ -100,7 +98,6 @@ class WindowingOwnerMacOS extends WindowingOwner {
     BoxConstraints? preferredConstraints,
     BaseWindowController? parent,
     String? title,
-    bool decorated = true,
   }) {
     final controller = DialogWindowControllerMacOS(
       owner: this,
@@ -108,7 +105,6 @@ class WindowingOwnerMacOS extends WindowingOwner {
       preferredSize: preferredSize,
       parent: parent,
       title: title,
-      decorated: decorated,
     );
     _activeControllers.add(controller);
     return controller;
@@ -490,15 +486,8 @@ class RegularWindowControllerMacOS extends RegularWindowController with _WindowC
     required Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
-    bool decorated = true,
   }) : _delegate = delegate,
        super.empty() {
-    if (!decorated) {
-      // TODO(team-macos): Implement undecorated windows on macOS.
-      // See https://github.com/flutter/flutter/issues/183560
-      throw UnimplementedError('Undecorated windows are not yet implemented on macOS.');
-    }
-
     _initController(owner);
 
     final int viewId = _MacOSPlatformInterface.createRegularWindow(
@@ -632,15 +621,8 @@ class DialogWindowControllerMacOS extends DialogWindowController with _WindowCon
     this.parent,
     BoxConstraints? preferredConstraints,
     String? title,
-    bool decorated = true,
   }) : _delegate = delegate,
        super.empty() {
-    if (!decorated) {
-      // TODO(team-macos): Implement undecorated windows on macOS.
-      // See https://github.com/flutter/flutter/issues/183560
-      throw UnimplementedError('Undecorated windows are not yet implemented on macOS.');
-    }
-
     _initController(owner);
 
     final int viewId = _MacOSPlatformInterface.createDialogWindow(

@@ -143,7 +143,6 @@ class WindowingOwnerWin32 extends WindowingOwner {
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
-    bool decorated = true,
     required RegularWindowControllerDelegate delegate,
   }) {
     return RegularWindowControllerWin32(
@@ -152,7 +151,6 @@ class WindowingOwnerWin32 extends WindowingOwner {
       preferredSize: preferredSize,
       preferredConstraints: preferredConstraints,
       title: title,
-      decorated: decorated,
     );
   }
 
@@ -164,7 +162,6 @@ class WindowingOwnerWin32 extends WindowingOwner {
     BoxConstraints? preferredConstraints,
     BaseWindowController? parent,
     String? title,
-    bool decorated = true,
   }) {
     return DialogWindowControllerWin32(
       owner: this,
@@ -172,7 +169,6 @@ class WindowingOwnerWin32 extends WindowingOwner {
       preferredSize: preferredSize,
       preferredConstraints: preferredConstraints,
       title: title,
-      decorated: decorated,
       parent: parent,
     );
   }
@@ -317,17 +313,10 @@ class RegularWindowControllerWin32 extends RegularWindowController {
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
-    bool decorated = true,
-  }) : _owner = owner,
        _delegate = delegate,
        super.empty() {
     if (!isWindowingEnabled) {
       throw UnsupportedError(_kWindowingDisabledErrorMessage);
-    }
-    if (!decorated) {
-      // TODO(team-windows): Implement undecorated windows on Windows.
-      // See https://github.com/flutter/flutter/issues/183559
-      throw UnimplementedError('Undecorated windows are not yet implemented on Windows.');
     }
 
     _handler = _RegularWindowMesageHandler(controller: this);
@@ -554,7 +543,6 @@ class DialogWindowControllerWin32 extends DialogWindowController {
     Size? preferredSize,
     BoxConstraints? preferredConstraints,
     String? title,
-    bool decorated = true,
     BaseWindowController? parent,
   }) : _owner = owner,
        _delegate = delegate,
@@ -562,11 +550,6 @@ class DialogWindowControllerWin32 extends DialogWindowController {
        super.empty() {
     if (!isWindowingEnabled) {
       throw UnsupportedError(_kWindowingDisabledErrorMessage);
-    }
-    if (!decorated) {
-      // TODO(team-windows): Implement undecorated windows on Windows.
-      // See https://github.com/flutter/flutter/issues/183559
-      throw UnimplementedError('Undecorated windows are not yet implemented on Windows.');
     }
 
     _handler = _DialogWindowMesageHandler(controller: this);

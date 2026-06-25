@@ -724,3 +724,8 @@ FlViewAccessible* fl_view_get_accessible(FlView* self) {
   g_return_val_if_fail(FL_IS_VIEW(self), nullptr);
   return self->view_accessible;
 }
+
+FlViewRenderer* fl_view_get_renderer(FlView* self) {
+  g_return_val_if_fail(FL_IS_VIEW(self), nullptr);
+  return self->renderer;
+}

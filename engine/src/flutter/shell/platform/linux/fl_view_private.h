@@ -6,6 +6,7 @@
 #define FLUTTER_SHELL_PLATFORM_LINUX_FL_VIEW_PRIVATE_H_
 
 #include "flutter/shell/platform/linux/fl_view_accessible.h"
+#include "flutter/shell/platform/linux/fl_view_renderer.h"
 #include "flutter/shell/platform/linux/public/flutter_linux/fl_view.h"
 
 G_BEGIN_DECLS
@@ -19,6 +20,16 @@ G_BEGIN_DECLS
  * Returns: an #FlViewAccessible.
  */
 FlViewAccessible* fl_view_get_accessible(FlView* view);
+
+/**
+ * fl_view_get_renderer:
+ * @view: an #FlView.
+ *
+ * Get the renderer used by this view.
+ *
+ * Returns: an #FlViewRenderer.
+ */
+FlViewRenderer* fl_view_get_renderer(FlView* view);
 
 G_END_DECLS
 

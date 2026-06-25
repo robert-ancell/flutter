@@ -16,12 +16,9 @@
 #include "flutter/shell/platform/linux/testing/linux_test.h"
 #include "gtest/gtest.h"
 
-// FIXME(robert-ancell): Disabled, see below.
-#if 0
 static void first_frame_cb(FlView* view, gboolean* first_frame_emitted) {
   *first_frame_emitted = TRUE;
 }
-#endif
 
 class FlViewTest : public flutter::testing::LinuxTest {};
 
@@ -45,11 +42,6 @@ TEST_F(FlViewTest, StateUpdateDoesNotHappenInInit) {
   (void)view;
 }
 
-// FIXME(robert-ancell): Disabling this test as it requires the FlView
-// to be realized to work after some refactoring. This is proving to be
-// very difficult to mock. Following PRs will change this code so enable the
-// test again after that.
-#if 0
 TEST_F(FlViewTest, FirstFrameSignal) {
   FlView* view = fl_view_new(project);
   gboolean first_frame_emitted = FALSE;
@@ -58,17 +50,16 @@ TEST_F(FlViewTest, FirstFrameSignal) {
 
   EXPECT_FALSE(first_frame_emitted);
 
-  fl_renderable_present_layers(FL_RENDERABLE(view), nullptr, 0);
+  // The view re-emits the first-frame signal from its renderer (which emits it
+  // once a frame has been presented). The renderer requires the view to be
+  // realized to present frames, which is not possible with the GTK mock, so
+  // emit the renderer signal directly.
+  FlViewRenderer* renderer = fl_view_get_renderer(view);
+  g_signal_emit_by_name(renderer, "first-frame");
 
-  // Signal is emitted in idle, clear the main loop.
-  while (g_main_context_iteration(g_main_context_default(), FALSE)) {
-    // Repeat until nothing to iterate on.
-  }
-
-  // Check view has detected frame.
+  // Check the view re-emitted the signal.
   EXPECT_TRUE(first_frame_emitted);
 }
-#endif
 
 // Check semantics update applied
 TEST_F(FlViewTest, SemanticsUpdate) {

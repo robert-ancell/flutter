@@ -270,7 +270,27 @@ void fl_subsurface_egl_present(FlSubsurfaceEGL* self,
   }
   eglSwapBuffers(egl_display, self->egl_surface);
 
+  // The frame texture is read by the commands above, which swapping the buffers
+  // only submits, it doesn't wait for them to complete. Take a fence so the
+  // engine's context can be made to wait for the read to finish before it
+  // renders the next frame into the same texture.
+  g_autoptr(FlGLFence) read_fence = nullptr;
+  if (fl_opengl_manager_can_fence(self->opengl_manager)) {
+    read_fence = fl_gl_fence_new(self->opengl_manager);
+  } else {
+    // No fences on this driver, wait for the read here instead.
+    glFinish();
+  }
+
   // Restore the engine's rendering context so the raster thread can continue
   // rendering after this present.
   fl_opengl_manager_make_current(self->opengl_manager);
+
+  // Make the engine's context wait for the frame texture to have been read
+  // before it runs any more commands, so the next frame isn't rendered into the
+  // texture while it is still being read. The wait is left to the GPU so this
+  // thread doesn't have to block.
+  if (read_fence != nullptr) {
+    fl_gl_fence_wait_gpu(read_fence);
+  }
 }

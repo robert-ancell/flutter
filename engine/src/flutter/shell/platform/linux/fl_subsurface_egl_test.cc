@@ -141,6 +141,38 @@ TEST_F(FlSubsurfaceEGLTest, PresentWithoutBlit) {
   fl_subsurface_egl_present(egl, 1, kWidth, kHeight, nullptr);
 }
 
+// Presenting reads the frame texture, and swapping the buffers only submits
+// that read. A fence is taken afterwards and the engine's context made to wait
+// for it, so the next frame isn't rendered into the texture while it is still
+// being read.
+TEST_F(FlSubsurfaceEGLTest, PresentFencesRead) {
+  g_autoptr(FlSubsurfaceEGL) egl = CreateEGL();
+  ASSERT_NE(egl, nullptr);
+
+  ::testing::InSequence sequence;
+  EXPECT_CALL(epoxy, glBlitFramebuffer);
+  EXPECT_CALL(epoxy,
+              eglCreateSyncKHR(::testing::_, EGL_SYNC_FENCE_KHR, ::testing::_));
+  EXPECT_CALL(epoxy, eglWaitSyncKHR);
+
+  fl_subsurface_egl_present(egl, 1, kWidth, kHeight, nullptr);
+}
+
+// Drivers without fences have to wait for the frame texture to have been read
+// before returning, as the engine renders the next frame into it.
+TEST_F(FlSubsurfaceEGLTest, PresentWithoutFence) {
+  EXPECT_CALL(epoxy, epoxy_has_egl_extension(::testing::_, ::testing::_))
+      .WillRepeatedly(::testing::Return(false));
+
+  g_autoptr(FlSubsurfaceEGL) egl = CreateEGL();
+  ASSERT_NE(egl, nullptr);
+
+  EXPECT_CALL(epoxy, eglCreateSyncKHR).Times(0);
+  EXPECT_CALL(epoxy, glFinish);
+
+  fl_subsurface_egl_present(egl, 1, kWidth, kHeight, nullptr);
+}
+
 // The native window is released with the object.
 TEST_F(FlSubsurfaceEGLTest, Destroy) {
   FlSubsurfaceEGL* egl = CreateEGL();

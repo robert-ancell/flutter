@@ -5,6 +5,8 @@
 #ifndef FLUTTER_SHELL_PLATFORM_LINUX_FL_POINTER_MANAGER_H_
 #define FLUTTER_SHELL_PLATFORM_LINUX_FL_POINTER_MANAGER_H_
 
+#include <gdk/gdk.h>
+
 #include "flutter/shell/platform/embedder/embedder.h"
 #include "flutter/shell/platform/linux/public/flutter_linux/fl_engine.h"
 
@@ -32,7 +34,7 @@ FlPointerManager* fl_pointer_manager_new(FlutterViewId view_id,
  * fl_pointer_manager_handle_button_press:
  * @manager: an #FlPointerManager.
  * @event_time: event time in milliseconds.
- * @device_kind: kind of device generating the event.
+ * @device: device generating the event.
  * @x: x co-ordinate of event.
  * @y: y co-ordinate of event.
  * @gdk_button: button being pressed.
@@ -41,21 +43,20 @@ FlPointerManager* fl_pointer_manager_new(FlutterViewId view_id,
  *
  * Returns %TRUE if this event was handled.
  */
-gboolean fl_pointer_manager_handle_button_press(
-    FlPointerManager* manager,
-    guint event_time,
-    FlutterPointerDeviceKind device_kind,
-    gdouble x,
-    gdouble y,
-    guint gdk_button,
-    gdouble rotation,
-    gdouble pressure);
+gboolean fl_pointer_manager_handle_button_press(FlPointerManager* manager,
+                                                guint event_time,
+                                                GdkDevice* device,
+                                                gdouble x,
+                                                gdouble y,
+                                                guint gdk_button,
+                                                gdouble rotation,
+                                                gdouble pressure);
 
 /**
  * fl_pointer_manager_handle_button_release:
  * @manager: an #FlPointerManager.
  * @event_time: event time in milliseconds.
- * @device_kind: kind of device generating the event.
+ * @device: device generating the event.
  * @x: x co-ordinate of event.
  * @y: y co-ordinate of event.
  * @gdk_button: button being released.
@@ -64,21 +65,20 @@ gboolean fl_pointer_manager_handle_button_press(
  *
  * Returns %TRUE if this event was handled.
  */
-gboolean fl_pointer_manager_handle_button_release(
-    FlPointerManager* manager,
-    guint event_time,
-    FlutterPointerDeviceKind device_kind,
-    gdouble x,
-    gdouble y,
-    guint gdk_button,
-    gdouble rotation,
-    gdouble pressure);
+gboolean fl_pointer_manager_handle_button_release(FlPointerManager* manager,
+                                                  guint event_time,
+                                                  GdkDevice* device,
+                                                  gdouble x,
+                                                  gdouble y,
+                                                  guint gdk_button,
+                                                  gdouble rotation,
+                                                  gdouble pressure);
 
 /**
  * fl_pointer_manager_handle_motion:
  * @manager: an #FlPointerManager.
  * @event_time: event time in milliseconds.
- * @device_kind: kind of device generating the event.
+ * @device: device generating the event.
  * @x: x co-ordinate of event.
  * @y: y co-ordinate of event.
  * @rotation: rotation of the pointer device in degrees.
@@ -88,7 +88,7 @@ gboolean fl_pointer_manager_handle_button_release(
  */
 gboolean fl_pointer_manager_handle_motion(FlPointerManager* manager,
                                           guint event_time,
-                                          FlutterPointerDeviceKind device_kind,
+                                          GdkDevice* device,
                                           gdouble x,
                                           gdouble y,
                                           gdouble rotation,
@@ -98,7 +98,7 @@ gboolean fl_pointer_manager_handle_motion(FlPointerManager* manager,
  * fl_pointer_manager_handle_enter:
  * @manager: an #FlPointerManager.
  * @event_time: event time in milliseconds.
- * @device_kind: kind of device generating the event.
+ * @device: device generating the event.
  * @x: x co-ordinate of event.
  * @y: y co-ordinate of event.
  * @rotation: rotation of the pointer device in degrees.
@@ -108,7 +108,7 @@ gboolean fl_pointer_manager_handle_motion(FlPointerManager* manager,
  */
 gboolean fl_pointer_manager_handle_enter(FlPointerManager* manager,
                                          guint event_time,
-                                         FlutterPointerDeviceKind device_kind,
+                                         GdkDevice* device,
                                          gdouble x,
                                          gdouble y,
                                          gdouble rotation,
@@ -118,7 +118,7 @@ gboolean fl_pointer_manager_handle_enter(FlPointerManager* manager,
  * fl_pointer_manager_handle_leave:
  * @manager: an #FlPointerManager.
  * @event_time: event time in milliseconds.
- * @device_kind: kind of device generating the event.
+ * @device: device generating the event.
  * @x: x co-ordinate of event.
  * @y: y co-ordinate of event.
  * @rotation: rotation of the pointer device in degrees.
@@ -128,7 +128,7 @@ gboolean fl_pointer_manager_handle_enter(FlPointerManager* manager,
  */
 gboolean fl_pointer_manager_handle_leave(FlPointerManager* manager,
                                          guint event_time,
-                                         FlutterPointerDeviceKind device_kind,
+                                         GdkDevice* device,
                                          gdouble x,
                                          gdouble y,
                                          gdouble rotation,
@@ -142,7 +142,7 @@ gboolean fl_pointer_manager_handle_leave(FlPointerManager* manager,
  * Handle the pointer grab being taken by something else, e.g. when a window
  * starts an interactive move or resize. The button release that ends the grab
  * is delivered to the window manager instead of the application, so any
- * buttons Flutter believes are pressed are cancelled.
+ * buttons Flutter believes are pressed are cancelled on all devices.
  *
  * Returns: %TRUE if the event was handled.
  */

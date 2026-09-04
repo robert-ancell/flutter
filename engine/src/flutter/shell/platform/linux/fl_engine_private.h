@@ -20,6 +20,11 @@
 
 G_BEGIN_DECLS
 
+// Use different device ID for mouse and pan/zoom events, since we can't
+// differentiate the actual device (mouse v.s. trackpad)
+constexpr int32_t kMousePointerDeviceId = 0;
+constexpr int32_t kPointerPanZoomDeviceId = 1;
+
 /**
  * FlEngineError:
  * Errors for #FlEngine objects to set on failures.
@@ -280,6 +285,7 @@ void fl_engine_send_window_metrics_event(FlEngine* engine,
  * @x: x location of mouse cursor.
  * @y: y location of mouse cursor.
  * @device_kind: kind of pointing device.
+ * @device: id of the pointing device.
  * @scroll_delta_x: x offset of scroll.
  * @scroll_delta_y: y offset of scroll.
  * @buttons: buttons that are pressed.
@@ -295,6 +301,7 @@ void fl_engine_send_mouse_pointer_event(FlEngine* engine,
                                         double x,
                                         double y,
                                         FlutterPointerDeviceKind device_kind,
+                                        int32_t device,
                                         double scroll_delta_x,
                                         double scroll_delta_y,
                                         int64_t buttons,

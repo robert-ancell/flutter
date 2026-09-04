@@ -30,11 +30,6 @@
 // Unique number associated with platform tasks.
 static constexpr size_t kPlatformTaskRunnerIdentifier = 1;
 
-// Use different device ID for mouse and pan/zoom events, since we can't
-// differentiate the actual device (mouse v.s. trackpad)
-static constexpr int32_t kMousePointerDeviceId = 0;
-static constexpr int32_t kPointerPanZoomDeviceId = 1;
-
 struct _FlEngine {
   GObject parent_instance;
 
@@ -1221,6 +1216,7 @@ void fl_engine_send_mouse_pointer_event(FlEngine* self,
                                         double x,
                                         double y,
                                         FlutterPointerDeviceKind device_kind,
+                                        int32_t device,
                                         double scroll_delta_x,
                                         double scroll_delta_y,
                                         int64_t buttons,
@@ -1245,7 +1241,7 @@ void fl_engine_send_mouse_pointer_event(FlEngine* self,
   fl_event.scroll_delta_y = scroll_delta_y;
   fl_event.device_kind = device_kind;
   fl_event.buttons = buttons;
-  fl_event.device = kMousePointerDeviceId;
+  fl_event.device = device;
   fl_event.view_id = view_id;
   // GDK reports tablet pressure through GDK_AXIS_PRESSURE. The GDK input device
   // documentation defines pressure as normalized from 0.0 to 1.0, which matches

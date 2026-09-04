@@ -8,17 +8,17 @@
 
 static constexpr int kMicrosecondsPerMillisecond = 1000;
 
-struct _FlPointerManager {
-  GObject parent_instance;
+// State of a single pointing device. Each device is reported to Flutter as a
+// separate pointer, so their buttons and locations are tracked separately.
+typedef struct {
+  // ID Flutter uses to refer to this device.
+  int32_t id;
 
-  // Engine to send pointer events to.
-  GWeakRef engine;
+  // The kind of device this is.
+  FlutterPointerDeviceKind kind;
 
-  // ID to mark events with.
-  FlutterViewId view_id;
-
-  // TRUE if the mouse pointer is inside the view, used for generating missing
-  // add events.
+  // TRUE if this pointer is inside the view, used for generating missing add
+  // events.
   gboolean pointer_inside;
 
   // Pointer button state recorded for sending status updates.
@@ -28,12 +28,28 @@ struct _FlPointerManager {
   // matching remove event has not been sent yet.
   gboolean leave_pending;
 
-  // Last known pointer position and device, used when synthesizing events.
-  FlutterPointerDeviceKind last_device_kind;
+  // Last known pointer position and state, used when synthesizing events.
   gdouble last_x;
   gdouble last_y;
   gdouble last_rotation;
   gdouble last_pressure;
+} FlPointerDevice;
+
+struct _FlPointerManager {
+  GObject parent_instance;
+
+  // Engine to send pointer events to.
+  GWeakRef engine;
+
+  // ID to mark events with.
+  FlutterViewId view_id;
+
+  // Table of #GdkDevice to #FlPointerDevice for the devices that have
+  // generated events.
+  GHashTable* devices;
+
+  // ID to give the next device that generates an event.
+  int32_t next_device_id;
 };
 
 G_DEFINE_TYPE(FlPointerManager, fl_pointer_manager, G_TYPE_OBJECT);
@@ -93,53 +109,148 @@ static gboolean get_button(FlutterPointerDeviceKind device_kind,
   return get_mouse_button(gdk_button, button);
 }
 
+// Releases the reference held on a device used as a key in the device table.
+static void unref_device(gpointer device) {
+  // Events that don't report a device are tracked with a NULL key.
+  if (device == nullptr) {
+    return;
+  }
+  g_object_unref(device);
+}
+
+// Gets the kind of pointer a GDK device is.
+static FlutterPointerDeviceKind get_device_kind(GdkDevice* device) {
+  if (device == nullptr) {
+    return kFlutterPointerDeviceKindMouse;
+  }
+
+  switch (gdk_device_get_source(device)) {
+    case GDK_SOURCE_PEN:
+    case GDK_SOURCE_CURSOR:
+    case GDK_SOURCE_TABLET_PAD:
+      return kFlutterPointerDeviceKindStylus;
+    case GDK_SOURCE_ERASER:
+      return kFlutterPointerDeviceKindInvertedStylus;
+    case GDK_SOURCE_TOUCHSCREEN:
+      return kFlutterPointerDeviceKindTouch;
+    case GDK_SOURCE_TOUCHPAD:  // trackpad device type is reserved for gestures
+    case GDK_SOURCE_TRACKPOINT:
+    case GDK_SOURCE_KEYBOARD:
+    case GDK_SOURCE_MOUSE:
+      return kFlutterPointerDeviceKindMouse;
+  }
+}
+
+// Gets the state being tracked for a device, creating it if this device
+// hasn't generated an event before.
+static FlPointerDevice* get_device(FlPointerManager* self, GdkDevice* device) {
+  FlPointerDevice* state =
+      static_cast<FlPointerDevice*>(g_hash_table_lookup(self->devices, device));
+  if (state != nullptr) {
+    return state;
+  }
+
+  state = g_new0(FlPointerDevice, 1);
+  state->id = self->next_device_id;
+  // Skip over the ID reserved for pan and zoom events.
+  self->next_device_id = self->next_device_id == kMousePointerDeviceId
+                             ? kPointerPanZoomDeviceId + 1
+                             : self->next_device_id + 1;
+  state->kind = get_device_kind(device);
+  // The device is referenced so it stays alive while it is a key in this
+  // table, e.g. if it is unplugged.
+  g_hash_table_insert(
+      self->devices, device != nullptr ? g_object_ref(device) : nullptr, state);
+
+  return state;
+}
+
 // Records the most recent pointer state so that events can be synthesized
 // from it later.
-static void record_pointer_state(FlPointerManager* self,
-                                 FlutterPointerDeviceKind device_kind,
+static void record_pointer_state(FlPointerDevice* device,
                                  gdouble x,
                                  gdouble y,
                                  gdouble rotation,
                                  gdouble pressure) {
-  self->last_device_kind = device_kind;
-  self->last_x = x;
-  self->last_y = y;
-  self->last_rotation = rotation;
-  self->last_pressure = pressure;
+  device->last_x = x;
+  device->last_y = y;
+  device->last_rotation = rotation;
+  device->last_pressure = pressure;
+}
+
+// Cancels the buttons pressed on a device, e.g. because their releases will
+// never be received.
+static gboolean cancel_device(FlPointerManager* self,
+                              FlPointerDevice* device,
+                              guint event_time) {
+  // Nothing to do if no buttons are pressed.
+  if (device->button_state == 0) {
+    return FALSE;
+  }
+
+  device->button_state = 0;
+
+  g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&self->engine));
+  if (engine == nullptr) {
+    return FALSE;
+  }
+
+  fl_engine_send_mouse_pointer_event(
+      engine, self->view_id, kCancel, event_time * kMicrosecondsPerMillisecond,
+      device->last_x, device->last_y, device->kind, device->id, 0, 0,
+      device->button_state, device->last_rotation, device->last_pressure);
+
+  // The pointer left the view while the button was down, so the remove event
+  // was delayed until the button was released. That release will never
+  // arrive, so remove the pointer now.
+  if (device->leave_pending) {
+    fl_engine_send_mouse_pointer_event(
+        engine, self->view_id, kRemove,
+        event_time * kMicrosecondsPerMillisecond, device->last_x,
+        device->last_y, device->kind, device->id, 0, 0, device->button_state,
+        device->last_rotation, device->last_pressure);
+    device->pointer_inside = FALSE;
+    device->leave_pending = FALSE;
+  }
+
+  return TRUE;
 }
 
 // Generates a mouse pointer event if the pointer appears inside the window.
 static void ensure_pointer_added(FlPointerManager* self,
+                                 FlPointerDevice* device,
                                  guint event_time,
-                                 FlutterPointerDeviceKind device_kind,
                                  gdouble x,
                                  gdouble y,
                                  gdouble rotation,
                                  gdouble pressure) {
-  record_pointer_state(self, device_kind, x, y, rotation, pressure);
+  record_pointer_state(device, x, y, rotation, pressure);
 
   // The pointer is generating events again, so it is inside the view.
-  self->leave_pending = FALSE;
+  device->leave_pending = FALSE;
 
-  if (self->pointer_inside) {
+  if (device->pointer_inside) {
     return;
   }
-  self->pointer_inside = TRUE;
+  device->pointer_inside = TRUE;
 
   g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&self->engine));
   if (engine == nullptr) {
     return;
   }
 
-  fl_engine_send_mouse_pointer_event(
-      engine, self->view_id, kAdd, event_time * kMicrosecondsPerMillisecond, x,
-      y, device_kind, 0, 0, self->button_state, rotation, pressure);
+  fl_engine_send_mouse_pointer_event(engine, self->view_id, kAdd,
+                                     event_time * kMicrosecondsPerMillisecond,
+                                     x, y, device->kind, device->id, 0, 0,
+                                     device->button_state, rotation, pressure);
 }
 
 static void fl_pointer_manager_dispose(GObject* object) {
   FlPointerManager* self = FL_POINTER_MANAGER(object);
 
   g_weak_ref_clear(&self->engine);
+
+  g_clear_pointer(&self->devices, g_hash_table_unref);
 
   G_OBJECT_CLASS(fl_pointer_manager_parent_class)->dispose(object);
 }
@@ -149,7 +260,9 @@ static void fl_pointer_manager_class_init(FlPointerManagerClass* klass) {
 }
 
 static void fl_pointer_manager_init(FlPointerManager* self) {
-  self->last_device_kind = kFlutterPointerDeviceKindMouse;
+  self->next_device_id = kMousePointerDeviceId;
+  self->devices = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+                                        unref_device, g_free);
 }
 
 FlPointerManager* fl_pointer_manager_new(FlutterViewId view_id,
@@ -163,36 +276,37 @@ FlPointerManager* fl_pointer_manager_new(FlutterViewId view_id,
   return self;
 }
 
-gboolean fl_pointer_manager_handle_button_press(
-    FlPointerManager* self,
-    guint event_time,
-    FlutterPointerDeviceKind device_kind,
-    gdouble x,
-    gdouble y,
-    guint gdk_button,
-    gdouble rotation,
-    gdouble pressure) {
+gboolean fl_pointer_manager_handle_button_press(FlPointerManager* self,
+                                                guint event_time,
+                                                GdkDevice* device,
+                                                gdouble x,
+                                                gdouble y,
+                                                guint gdk_button,
+                                                gdouble rotation,
+                                                gdouble pressure) {
   g_return_val_if_fail(FL_IS_POINTER_MANAGER(self), FALSE);
 
+  FlPointerDevice* pointer = get_device(self, device);
+
   int64_t button;
-  if (!get_button(device_kind, gdk_button, &button)) {
+  if (!get_button(pointer->kind, gdk_button, &button)) {
     return FALSE;
   }
 
-  ensure_pointer_added(self, event_time, device_kind, x, y, rotation, pressure);
+  ensure_pointer_added(self, pointer, event_time, x, y, rotation, pressure);
 
   // GDK never sends two presses of the same button without a release in
   // between, so if Flutter thinks this button is already down then the release
   // was lost, e.g. it was delivered to the window manager because it ended an
   // interactive move or resize. Cancel the stale press so this one is not
   // dropped.
-  if ((self->button_state & button) != 0) {
-    fl_pointer_manager_handle_grab_broken(self, event_time);
+  if ((pointer->button_state & button) != 0) {
+    cancel_device(self, pointer, event_time);
   }
 
-  int old_button_state = self->button_state;
+  int old_button_state = pointer->button_state;
   FlutterPointerPhase phase = kMove;
-  self->button_state ^= button;
+  pointer->button_state ^= button;
   phase = old_button_state == 0 ? kDown : kMove;
 
   g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&self->engine));
@@ -200,56 +314,59 @@ gboolean fl_pointer_manager_handle_button_press(
     return FALSE;
   }
 
-  fl_engine_send_mouse_pointer_event(
-      engine, self->view_id, phase, event_time * kMicrosecondsPerMillisecond, x,
-      y, device_kind, 0, 0, self->button_state, rotation, pressure);
+  fl_engine_send_mouse_pointer_event(engine, self->view_id, phase,
+                                     event_time * kMicrosecondsPerMillisecond,
+                                     x, y, pointer->kind, pointer->id, 0, 0,
+                                     pointer->button_state, rotation, pressure);
 
   return TRUE;
 }
 
-gboolean fl_pointer_manager_handle_button_release(
-    FlPointerManager* self,
-    guint event_time,
-    FlutterPointerDeviceKind device_kind,
-    gdouble x,
-    gdouble y,
-    guint gdk_button,
-    gdouble rotation,
-    gdouble pressure) {
+gboolean fl_pointer_manager_handle_button_release(FlPointerManager* self,
+                                                  guint event_time,
+                                                  GdkDevice* device,
+                                                  gdouble x,
+                                                  gdouble y,
+                                                  guint gdk_button,
+                                                  gdouble rotation,
+                                                  gdouble pressure) {
   g_return_val_if_fail(FL_IS_POINTER_MANAGER(self), FALSE);
 
+  FlPointerDevice* pointer = get_device(self, device);
+
   int64_t button;
-  if (!get_button(device_kind, gdk_button, &button)) {
+  if (!get_button(pointer->kind, gdk_button, &button)) {
     return FALSE;
   }
 
-  record_pointer_state(self, device_kind, x, y, rotation, pressure);
+  record_pointer_state(pointer, x, y, rotation, pressure);
 
   // Drop the event if Flutter already thinks the button is up.
-  if ((self->button_state & button) == 0) {
+  if ((pointer->button_state & button) == 0) {
     return FALSE;
   }
 
   FlutterPointerPhase phase = kMove;
-  self->button_state ^= button;
+  pointer->button_state ^= button;
 
-  phase = self->button_state == 0 ? kUp : kMove;
+  phase = pointer->button_state == 0 ? kUp : kMove;
 
   g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&self->engine));
   if (engine == nullptr) {
     return FALSE;
   }
 
-  fl_engine_send_mouse_pointer_event(
-      engine, self->view_id, phase, event_time * kMicrosecondsPerMillisecond, x,
-      y, device_kind, 0, 0, self->button_state, rotation, pressure);
+  fl_engine_send_mouse_pointer_event(engine, self->view_id, phase,
+                                     event_time * kMicrosecondsPerMillisecond,
+                                     x, y, pointer->kind, pointer->id, 0, 0,
+                                     pointer->button_state, rotation, pressure);
 
   return TRUE;
 }
 
 gboolean fl_pointer_manager_handle_motion(FlPointerManager* self,
                                           guint event_time,
-                                          FlutterPointerDeviceKind device_kind,
+                                          GdkDevice* device,
                                           gdouble x,
                                           gdouble y,
                                           gdouble rotation,
@@ -261,19 +378,21 @@ gboolean fl_pointer_manager_handle_motion(FlPointerManager* self,
     return FALSE;
   }
 
-  ensure_pointer_added(self, event_time, device_kind, x, y, rotation, pressure);
+  FlPointerDevice* pointer = get_device(self, device);
+
+  ensure_pointer_added(self, pointer, event_time, x, y, rotation, pressure);
 
   fl_engine_send_mouse_pointer_event(
-      engine, self->view_id, self->button_state != 0 ? kMove : kHover,
-      event_time * kMicrosecondsPerMillisecond, x, y, device_kind, 0, 0,
-      self->button_state, rotation, pressure);
+      engine, self->view_id, pointer->button_state != 0 ? kMove : kHover,
+      event_time * kMicrosecondsPerMillisecond, x, y, pointer->kind,
+      pointer->id, 0, 0, pointer->button_state, rotation, pressure);
 
   return TRUE;
 }
 
 gboolean fl_pointer_manager_handle_enter(FlPointerManager* self,
                                          guint event_time,
-                                         FlutterPointerDeviceKind device_kind,
+                                         GdkDevice* device,
                                          gdouble x,
                                          gdouble y,
                                          gdouble rotation,
@@ -285,14 +404,15 @@ gboolean fl_pointer_manager_handle_enter(FlPointerManager* self,
     return FALSE;
   }
 
-  ensure_pointer_added(self, event_time, device_kind, x, y, rotation, pressure);
+  ensure_pointer_added(self, get_device(self, device), event_time, x, y,
+                       rotation, pressure);
 
   return TRUE;
 }
 
 gboolean fl_pointer_manager_handle_leave(FlPointerManager* self,
                                          guint event_time,
-                                         FlutterPointerDeviceKind device_kind,
+                                         GdkDevice* device,
                                          gdouble x,
                                          gdouble y,
                                          gdouble rotation,
@@ -304,7 +424,9 @@ gboolean fl_pointer_manager_handle_leave(FlPointerManager* self,
     return FALSE;
   }
 
-  if (!self->pointer_inside) {
+  FlPointerDevice* pointer = get_device(self, device);
+
+  if (!pointer->pointer_inside) {
     return TRUE;
   }
 
@@ -312,17 +434,18 @@ gboolean fl_pointer_manager_handle_leave(FlPointerManager* self,
   // window with mouse grab active Gtk will send another leave notify on
   // release. Remember the leave so the pointer can still be removed if that
   // release is never delivered, e.g. because the grab was broken.
-  if (self->button_state != 0) {
-    record_pointer_state(self, device_kind, x, y, rotation, pressure);
-    self->leave_pending = TRUE;
+  if (pointer->button_state != 0) {
+    record_pointer_state(pointer, x, y, rotation, pressure);
+    pointer->leave_pending = TRUE;
     return TRUE;
   }
 
-  fl_engine_send_mouse_pointer_event(
-      engine, self->view_id, kRemove, event_time * kMicrosecondsPerMillisecond,
-      x, y, device_kind, 0, 0, self->button_state, rotation, pressure);
-  self->pointer_inside = FALSE;
-  self->leave_pending = FALSE;
+  fl_engine_send_mouse_pointer_event(engine, self->view_id, kRemove,
+                                     event_time * kMicrosecondsPerMillisecond,
+                                     x, y, pointer->kind, pointer->id, 0, 0,
+                                     pointer->button_state, rotation, pressure);
+  pointer->pointer_inside = FALSE;
+  pointer->leave_pending = FALSE;
 
   return TRUE;
 }
@@ -331,35 +454,18 @@ gboolean fl_pointer_manager_handle_grab_broken(FlPointerManager* self,
                                                guint event_time) {
   g_return_val_if_fail(FL_IS_POINTER_MANAGER(self), FALSE);
 
-  // Nothing to do if no buttons are pressed.
-  if (self->button_state == 0) {
-    return FALSE;
+  // Every device has lost its grab, e.g. the window is being moved by the
+  // window manager.
+  gboolean handled = FALSE;
+  GHashTableIter iter;
+  gpointer value;
+  g_hash_table_iter_init(&iter, self->devices);
+  while (g_hash_table_iter_next(&iter, nullptr, &value)) {
+    FlPointerDevice* pointer = static_cast<FlPointerDevice*>(value);
+    if (cancel_device(self, pointer, event_time)) {
+      handled = TRUE;
+    }
   }
 
-  self->button_state = 0;
-
-  g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&self->engine));
-  if (engine == nullptr) {
-    return FALSE;
-  }
-
-  fl_engine_send_mouse_pointer_event(
-      engine, self->view_id, kCancel, event_time * kMicrosecondsPerMillisecond,
-      self->last_x, self->last_y, self->last_device_kind, 0, 0,
-      self->button_state, self->last_rotation, self->last_pressure);
-
-  // The pointer left the view while the button was down, so the remove event
-  // was delayed until the button was released. That release will never
-  // arrive, so remove the pointer now.
-  if (self->leave_pending) {
-    fl_engine_send_mouse_pointer_event(
-        engine, self->view_id, kRemove,
-        event_time * kMicrosecondsPerMillisecond, self->last_x, self->last_y,
-        self->last_device_kind, 0, 0, self->button_state, self->last_rotation,
-        self->last_pressure);
-    self->pointer_inside = FALSE;
-    self->leave_pending = FALSE;
-  }
-
-  return TRUE;
+  return handled;
 }

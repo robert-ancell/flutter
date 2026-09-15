@@ -105,6 +105,12 @@ sealed class BaseWindowController extends ChangeNotifier {
   bool get isDestroyed;
 }
 
+/// The edge of a window to resize when dragging with a pointer.
+///
+/// {@macro flutter.widgets.windowing.experimental}
+@internal
+enum WindowDragEdge { northWest, north, northEast, west, east, southWest, south, southEast }
+
 /// Delegate class for regular window controller.
 ///
 /// {@macro flutter.widgets.windowing.experimental}

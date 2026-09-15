@@ -38,12 +38,44 @@ const int _WM_DESTROY = 0x0002;
 const int _WM_SIZE = 0x0005;
 const int _WM_ACTIVATE = 0x0006;
 const int _WM_CLOSE = 0x0010;
+const int _WM_NCCALCSIZE = 0x0083;
+const int _WM_SYSCOMMAND = 0x0112;
 
 const int _WA_INACTIVE = 0;
 
 const int _SW_RESTORE = 9;
 const int _SW_MAXIMIZE = 3;
 const int _SW_MINIMIZE = 6;
+
+/// The height of a title bar, used with GetSystemMetricsForDpi.
+const int _SM_CYCAPTION = 4;
+
+/// SetWindowPos flags. The frame changed flag makes Windows recalculate the
+/// non-client area, the others keep the current position, size, stacking and
+/// activation.
+const int _SWP_NOSIZE = 0x0001;
+const int _SWP_NOMOVE = 0x0002;
+const int _SWP_NOZORDER = 0x0004;
+const int _SWP_NOACTIVATE = 0x0010;
+const int _SWP_FRAMECHANGED = 0x0020;
+
+/// System commands sent with WM_SYSCOMMAND to start a move or resize.
+const int _SC_SIZE = 0xF000;
+const int _SC_MOVE = 0xF010;
+
+/// Hit test result for the title bar, used to tell SC_MOVE the drag started
+/// there.
+const int _HTCAPTION = 2;
+
+/// The edges a SC_SIZE command can resize from.
+const int _WMSZ_LEFT = 1;
+const int _WMSZ_RIGHT = 2;
+const int _WMSZ_TOP = 3;
+const int _WMSZ_TOPLEFT = 4;
+const int _WMSZ_TOPRIGHT = 5;
+const int _WMSZ_BOTTOM = 6;
+const int _WMSZ_BOTTOMLEFT = 7;
+const int _WMSZ_BOTTOMRIGHT = 8;
 
 const String _kWindowingDisabledErrorMessage = '''
 Windowing APIs are not enabled.
@@ -316,6 +348,110 @@ abstract mixin class BaseWindowControllerWin32 {
   /// {@macro flutter.widgets.windowing.experimental}
   @internal
   HWND get windowHandle;
+
+  /// Sets whether this window is decorated with a title bar drawn by Windows.
+  ///
+  /// An undecorated window is left entirely to Flutter to draw, so an app that
+  /// turns this off has to provide its own title bar and window buttons.
+  ///
+  /// The window keeps every one of its styles, including WS_CAPTION. Rather
+  /// than taking the title bar away, the client area is extended up over it by
+  /// handling WM_NCCALCSIZE, which leaves the window a normal one as far as the
+  /// desktop window manager is concerned: it keeps its drop shadow, its rounded
+  /// corners, its open and minimize animations, Aero Snap and the correct size
+  /// when maximized. Taking WS_CAPTION away would lose all of those.
+  ///
+  /// The sizing border is left in the non-client area, so Windows goes on
+  /// resizing the window from any edge without the app drawing or hit testing
+  /// anything. It is drawn outside the client area and so covers no Flutter
+  /// content.
+  ///
+  /// {@macro flutter.widgets.windowing.experimental}
+  @internal
+  void setDecorated(bool decorated) {
+    if (decorated == _decorated) {
+      return;
+    }
+    _decorated = decorated;
+    // The non-client area is cached, so Windows has to be told to recalculate
+    // it before the change is visible.
+    _Win32PlatformInterface.notifyWindowFrameChanged(windowHandle);
+  }
+
+  bool _decorated = true;
+
+  /// Handles the messages that keep an undecorated window undecorated.
+  ///
+  /// Controllers using this mixin have to give it every message they receive,
+  /// before they handle it themselves. Returns the LRESULT to reply with, or
+  /// null to go on handling the message as usual.
+  @internal
+  int? handleWindowFrameMessage(HWND windowHandle, int message, int wParam, int lParam) {
+    // A wParam of zero asks for a rectangle rather than the full parameters,
+    // which is only sent to windows with the CS_VREDRAW style and is not worth
+    // adjusting because nothing is drawn from it.
+    if (_decorated || message != _WM_NCCALCSIZE || wParam == 0) {
+      return null;
+    }
+    // Let Windows work out where the client area would normally be, so that the
+    // sizing border and the insets a maximized window needs are whatever this
+    // version of Windows uses, then take back the title bar from the top of it.
+    final int result = _Win32PlatformInterface.defWindowProc(
+      windowHandle,
+      message,
+      wParam,
+      lParam,
+    );
+    _Win32PlatformInterface.extendClientAreaOverCaption(windowHandle, lParam);
+    return result;
+  }
+
+  /// Starts an interactive move of this window, e.g. in response to a pointer
+  /// button being pressed on a client side title bar.
+  ///
+  /// The drag follows the pointer from its current position, so [button],
+  /// [rootX], [rootY] and [timestamp] are accepted to match the other platforms
+  /// but are not used on Windows.
+  ///
+  /// {@macro flutter.widgets.windowing.experimental}
+  @internal
+  void beginMoveDrag({required int button, int rootX = 0, int rootY = 0, int timestamp = 0}) {
+    _Win32PlatformInterface.beginSystemDrag(windowHandle, _SC_MOVE | _HTCAPTION);
+  }
+
+  /// Starts an interactive resize of this window from [edge], e.g. in response
+  /// to a pointer button being pressed on a client side window border.
+  ///
+  /// The drag follows the pointer from its current position, so [button],
+  /// [rootX], [rootY] and [timestamp] are accepted to match the other platforms
+  /// but are not used on Windows.
+  ///
+  /// {@macro flutter.widgets.windowing.experimental}
+  @internal
+  void beginResizeDrag({
+    required WindowDragEdge edge,
+    required int button,
+    int rootX = 0,
+    int rootY = 0,
+    int timestamp = 0,
+  }) {
+    _Win32PlatformInterface.beginSystemDrag(windowHandle, _SC_SIZE | _wmszForDragEdge(edge));
+  }
+}
+
+/// Converts [edge] to the matching WMSZ_ value used by the SC_SIZE system
+/// command.
+int _wmszForDragEdge(WindowDragEdge edge) {
+  return switch (edge) {
+    WindowDragEdge.northWest => _WMSZ_TOPLEFT,
+    WindowDragEdge.north => _WMSZ_TOP,
+    WindowDragEdge.northEast => _WMSZ_TOPRIGHT,
+    WindowDragEdge.west => _WMSZ_LEFT,
+    WindowDragEdge.east => _WMSZ_RIGHT,
+    WindowDragEdge.southWest => _WMSZ_BOTTOMLEFT,
+    WindowDragEdge.south => _WMSZ_BOTTOM,
+    WindowDragEdge.southEast => _WMSZ_BOTTOMRIGHT,
+  };
 }
 
 /// Implementation of [WindowController] for the Windows platform.
@@ -524,6 +660,11 @@ class WindowControllerWin32 extends WindowController with BaseWindowControllerWi
   ) {
     if (view.viewId != rootView.viewId) {
       return null;
+    }
+
+    final int? frameResult = handleWindowFrameMessage(windowHandle, message, wParam, lParam);
+    if (frameResult != null) {
+      return frameResult;
     }
 
     // User handler can not prevent controller from processing windows message.
@@ -749,6 +890,11 @@ class DialogWindowControllerWin32 extends DialogWindowController with BaseWindow
   ) {
     if (view.viewId != rootView.viewId) {
       return null;
+    }
+
+    final int? frameResult = handleWindowFrameMessage(windowHandle, message, wParam, lParam);
+    if (frameResult != null) {
+      return frameResult;
     }
 
     // User handler can not prevent controller from processing windows message.
@@ -1520,6 +1666,76 @@ class _Win32PlatformInterface {
 
   @ffi.Native<ffi.Int32 Function(HWND)>(symbol: 'IsZoomed')
   external static int isZoomed(HWND windowHandle);
+
+  /// Extends the client area of [windowHandle] over its title bar, where
+  /// [lParam] points at the NCCALCSIZE_PARAMS of a WM_NCCALCSIZE message that
+  /// [defWindowProc] has already filled in.
+  ///
+  /// The first rectangle of NCCALCSIZE_PARAMS is the proposed client area, and
+  /// is the first field of the struct, so the parameters can be read as a
+  /// rectangle. Moving its top edge up by the height of a title bar hands that
+  /// strip to the client area and leaves the sizing border where it was.
+  static void extendClientAreaOverCaption(HWND windowHandle, int lParam) {
+    final clientRect = ffi.Pointer<_Win32Rect>.fromAddress(lParam);
+    final int dpi = _getDpiForWindow(windowHandle);
+    clientRect.ref.top -= _getSystemMetricsForDpi(_SM_CYCAPTION, dpi);
+  }
+
+  /// Makes Windows recalculate the non-client area of [windowHandle] after the
+  /// way it is framed has changed.
+  static void notifyWindowFrameChanged(HWND windowHandle) {
+    _setWindowPos(
+      windowHandle,
+      ffi.nullptr,
+      0,
+      0,
+      0,
+      0,
+      _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOZORDER | _SWP_NOACTIVATE | _SWP_FRAMECHANGED,
+    );
+  }
+
+  /// Starts a system move or resize of [windowHandle], where [command] is an
+  /// SC_MOVE or SC_SIZE system command.
+  ///
+  /// The pointer is released first, otherwise the window being dragged would
+  /// not receive the pointer events that move it.
+  static void beginSystemDrag(HWND windowHandle, int command) {
+    _releaseCapture();
+    _sendMessage(windowHandle, _WM_SYSCOMMAND, command, 0);
+  }
+
+  @ffi.Native<ffi.IntPtr Function(HWND, ffi.Uint32, ffi.UintPtr, ffi.IntPtr)>(
+    symbol: 'DefWindowProcW',
+  )
+  external static int defWindowProc(HWND windowHandle, int message, int wParam, int lParam);
+
+  @ffi.Native<ffi.Uint32 Function(HWND)>(symbol: 'GetDpiForWindow')
+  external static int _getDpiForWindow(HWND windowHandle);
+
+  @ffi.Native<ffi.Int32 Function(ffi.Int32, ffi.Uint32)>(symbol: 'GetSystemMetricsForDpi')
+  external static int _getSystemMetricsForDpi(int index, int dpi);
+
+  @ffi.Native<
+    ffi.Bool Function(HWND, HWND, ffi.Int32, ffi.Int32, ffi.Int32, ffi.Int32, ffi.Uint32)
+  >(symbol: 'SetWindowPos')
+  external static bool _setWindowPos(
+    HWND windowHandle,
+    HWND windowHandleInsertAfter,
+    int x,
+    int y,
+    int width,
+    int height,
+    int flags,
+  );
+
+  @ffi.Native<ffi.Bool Function()>(symbol: 'ReleaseCapture')
+  external static bool _releaseCapture();
+
+  @ffi.Native<ffi.IntPtr Function(HWND, ffi.Uint32, ffi.UintPtr, ffi.IntPtr)>(
+    symbol: 'SendMessageW',
+  )
+  external static int _sendMessage(HWND windowHandle, int message, int wParam, int lParam);
 
   static void setFullscreen(
     ffi.Allocator allocator,

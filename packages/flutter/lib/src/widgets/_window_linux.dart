@@ -267,12 +267,6 @@ class LinuxWindowRegistrar {
   _FlView? _viewForViewId(int viewId) => _views[viewId];
 }
 
-/// The edge of a window to resize when dragging with a pointer.
-///
-/// {@macro flutter.widgets.windowing.experimental}
-@internal
-enum WindowDragEdge { northWest, north, northEast, west, east, southWest, south, southEast }
-
 /// Platform specific functionality for all window controllers on Linux.
 ///
 /// {@macro flutter.widgets.windowing.experimental}

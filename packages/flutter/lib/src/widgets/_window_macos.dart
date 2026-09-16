@@ -206,6 +206,64 @@ abstract interface class BaseWindowControllerMacOS {
   /// {@macro flutter.widgets.windowing.experimental}
   @internal
   bool get isDestroyed;
+
+  /// Sets whether this window is drawn with the title bar macOS provides.
+  ///
+  /// An undecorated window has its contents extended over the whole window, so
+  /// an app that turns this off has to provide its own title bar.
+  ///
+  /// The window buttons are left where macOS puts them, so an app either lays
+  /// out around them, using [windowButtonsRect], or hides them with
+  /// [setWindowButtonsVisible] and draws its own.
+  ///
+  /// Does nothing to a window that never had a title bar, e.g. a popup.
+  ///
+  /// {@macro flutter.widgets.windowing.experimental}
+  @internal
+  void setDecorated(bool decorated);
+
+  /// Whether this window is drawn with the title bar macOS provides.
+  ///
+  /// A window that never had a title bar, e.g. a popup, is not decorated.
+  ///
+  /// {@macro flutter.widgets.windowing.experimental}
+  @internal
+  bool get isDecorated;
+
+  /// Sets whether the close, minimize and zoom buttons are shown.
+  ///
+  /// {@macro flutter.widgets.windowing.experimental}
+  @internal
+  void setWindowButtonsVisible(bool visible);
+
+  /// The area the close, minimize and zoom buttons occupy, relative to the top
+  /// left of this window's contents.
+  ///
+  /// The area is [Rect.zero] if the window has no buttons or they are hidden.
+  ///
+  /// The buttons are only over the window contents if the window is
+  /// undecorated, see [setDecorated]. A decorated window draws them in its
+  /// title bar, above the contents, so the returned area has a negative top.
+  ///
+  /// {@macro flutter.widgets.windowing.experimental}
+  @internal
+  Rect get windowButtonsRect;
+
+  /// Starts an interactive move of this window, e.g. in response to a pointer
+  /// button being pressed on a client side title bar.
+  ///
+  /// The drag follows the pointer event being handled, so [button], [rootX],
+  /// [rootY] and [timestamp] are accepted to match the other platforms but are
+  /// not used on macOS. Pointer events are delivered to Dart asynchronously, so
+  /// this does nothing if the pointer button has already been released by the
+  /// time it is called.
+  ///
+  /// macOS resizes a window from its own edges, so there is no matching call to
+  /// start a resize.
+  ///
+  /// {@macro flutter.widgets.windowing.experimental}
+  @internal
+  void beginMoveDrag({required int button, int rootX = 0, int rootY = 0, int timestamp = 0});
 }
 
 mixin _WindowControllerMixin implements BaseWindowControllerMacOS {
@@ -271,6 +329,41 @@ mixin _WindowControllerMixin implements BaseWindowControllerMacOS {
   Size get contentSize {
     _ensureNotDestroyed();
     return _MacOSPlatformInterface.getWindowContentSize(windowHandle);
+  }
+
+  @override
+  @internal
+  void setDecorated(bool decorated) {
+    _ensureNotDestroyed();
+    _MacOSPlatformInterface.setWindowDecorated(windowHandle, decorated);
+  }
+
+  @override
+  @internal
+  bool get isDecorated {
+    _ensureNotDestroyed();
+    return _MacOSPlatformInterface.isWindowDecorated(windowHandle);
+  }
+
+  @override
+  @internal
+  void setWindowButtonsVisible(bool visible) {
+    _ensureNotDestroyed();
+    _MacOSPlatformInterface.setWindowButtonsVisible(windowHandle, visible);
+  }
+
+  @override
+  @internal
+  Rect get windowButtonsRect {
+    _ensureNotDestroyed();
+    return _MacOSPlatformInterface.getWindowButtonsRect(windowHandle);
+  }
+
+  @override
+  @internal
+  void beginMoveDrag({required int button, int rootX = 0, int rootY = 0, int timestamp = 0}) {
+    _ensureNotDestroyed();
+    _MacOSPlatformInterface.beginWindowMoveDrag(windowHandle);
   }
 
   void destroy() {
@@ -1128,6 +1221,27 @@ class _MacOSPlatformInterface {
 
   @Native<_Offset Function(Pointer<Void>)>(symbol: 'InternalFlutter_Window_GetOffsetInParent')
   external static _Offset getOffsetInParent(Pointer<Void> windowHandle);
+
+  @Native<Void Function(Pointer<Void>, Bool)>(symbol: 'InternalFlutter_Window_SetDecorated')
+  external static void setWindowDecorated(Pointer<Void> windowHandle, bool decorated);
+
+  @Native<Bool Function(Pointer<Void>)>(symbol: 'InternalFlutter_Window_IsDecorated')
+  external static bool isWindowDecorated(Pointer<Void> windowHandle);
+
+  @Native<Void Function(Pointer<Void>, Bool)>(
+    symbol: 'InternalFlutter_Window_SetWindowButtonsVisible',
+  )
+  external static void setWindowButtonsVisible(Pointer<Void> windowHandle, bool visible);
+
+  @Native<_Rect Function(Pointer<Void>)>(symbol: 'InternalFlutter_Window_GetWindowButtonsRect')
+  external static _Rect _getWindowButtonsRect(Pointer<Void> windowHandle);
+
+  static Rect getWindowButtonsRect(Pointer<Void> windowHandle) {
+    return _getWindowButtonsRect(windowHandle).toRect();
+  }
+
+  @Native<Void Function(Pointer<Void>)>(symbol: 'InternalFlutter_Window_BeginMoveDrag')
+  external static void beginWindowMoveDrag(Pointer<Void> windowHandle);
 }
 
 // FFI utilities.

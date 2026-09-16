@@ -787,4 +787,93 @@ FlutterWindowOffset InternalFlutter_Window_GetOffsetInParent(void* window) {
   };
 }
 
+namespace {
+constexpr NSWindowButton kStandardWindowButtons[] = {
+    NSWindowButtonCloseButton,
+    NSWindowButtonMiniaturizeButton,
+    NSWindowButtonZoomButton,
+};
+}  // namespace
+
+void InternalFlutter_Window_SetDecorated(void* window, bool decorated) {
+  NSWindow* w = (__bridge NSWindow*)window;
+  if ((w.styleMask & NSWindowStyleMaskTitled) == 0) {
+    // A window that never had a title bar, e.g. a popup, has nothing to show or hide.
+    return;
+  }
+  if (decorated) {
+    w.styleMask &= ~NSWindowStyleMaskFullSizeContentView;
+  } else {
+    w.styleMask |= NSWindowStyleMaskFullSizeContentView;
+  }
+  // The title bar is kept so it can hold the window buttons, but is made
+  // invisible so the content shows through it.
+  w.titlebarAppearsTransparent = !decorated;
+  w.titleVisibility = decorated ? NSWindowTitleVisible : NSWindowTitleHidden;
+}
+
+bool InternalFlutter_Window_IsDecorated(void* window) {
+  NSWindow* w = (__bridge NSWindow*)window;
+  return (w.styleMask & NSWindowStyleMaskTitled) != 0 &&
+         (w.styleMask & NSWindowStyleMaskFullSizeContentView) == 0;
+}
+
+void InternalFlutter_Window_SetWindowButtonsVisible(void* window, bool visible) {
+  NSWindow* w = (__bridge NSWindow*)window;
+  for (NSWindowButton type : kStandardWindowButtons) {
+    [w standardWindowButton:type].hidden = !visible;
+  }
+}
+
+FlutterWindowRect InternalFlutter_Window_GetWindowButtonsRect(void* window) {
+  NSWindow* w = (__bridge NSWindow*)window;
+  NSView* contentView = w.contentView;
+  if (contentView == nil) {
+    return {0, 0, 0, 0};
+  }
+
+  NSRect rect = NSZeroRect;
+  bool haveRect = false;
+  for (NSWindowButton type : kStandardWindowButtons) {
+    NSButton* button = [w standardWindowButton:type];
+    if (button == nil || button.isHidden) {
+      continue;
+    }
+    NSRect buttonRect = [contentView convertRect:button.bounds fromView:button];
+    rect = haveRect ? NSUnionRect(rect, buttonRect) : buttonRect;
+    haveRect = true;
+  }
+  if (!haveRect) {
+    return {0, 0, 0, 0};
+  }
+
+  // Flutter measures from the top left of the content, AppKit views measure from the bottom left
+  // unless they are flipped.
+  double top = contentView.isFlipped ? NSMinY(rect) : NSHeight(contentView.bounds) - NSMaxY(rect);
+  return {NSMinX(rect), top, NSWidth(rect), NSHeight(rect)};
+}
+
+void InternalFlutter_Window_BeginMoveDrag(void* window) {
+  NSWindow* w = (__bridge NSWindow*)window;
+  // The drag has to be started from the event that is being handled. Flutter delivers pointer
+  // events to Dart asynchronously, so by the time this is called the application may have moved on
+  // to an event that a drag cannot be started from, e.g. the button has already been released.
+  NSEvent* event = NSApplication.sharedApplication.currentEvent;
+  if (event == nil || event.window != w) {
+    return;
+  }
+  switch (event.type) {
+    case NSEventTypeLeftMouseDown:
+    case NSEventTypeLeftMouseDragged:
+    case NSEventTypeRightMouseDown:
+    case NSEventTypeRightMouseDragged:
+    case NSEventTypeOtherMouseDown:
+    case NSEventTypeOtherMouseDragged:
+      [w performWindowDragWithEvent:event];
+      break;
+    default:
+      break;
+  }
+}
+
 // NOLINTEND(google-objc-function-naming)

@@ -167,6 +167,36 @@ void InternalFlutter_Window_UpdatePosition(void* window);
 FLUTTER_DARWIN_EXPORT
 FlutterWindowOffset InternalFlutter_Window_GetOffsetInParent(void* window);
 
+// Sets whether the window is drawn with the system title bar. An undecorated
+// window has its content extended over the whole window, so the app draws its
+// own title bar. Does nothing to a window that never had a title bar.
+//
+// The window buttons are left in place, see
+// |InternalFlutter_Window_SetWindowButtonsVisible|.
+FLUTTER_DARWIN_EXPORT
+void InternalFlutter_Window_SetDecorated(void* window, bool decorated);
+
+// Returns whether the window is drawn with the system title bar. A window that
+// never had a title bar is not decorated.
+FLUTTER_DARWIN_EXPORT
+bool InternalFlutter_Window_IsDecorated(void* window);
+
+// Sets whether the close, minimize and zoom buttons are shown.
+FLUTTER_DARWIN_EXPORT
+void InternalFlutter_Window_SetWindowButtonsVisible(void* window, bool visible);
+
+// Returns the area the close, minimize and zoom buttons occupy, in logical
+// coordinates relative to the top left of the window's content. The area is
+// empty if the buttons are hidden.
+FLUTTER_DARWIN_EXPORT
+FlutterWindowRect InternalFlutter_Window_GetWindowButtonsRect(void* window);
+
+// Starts an interactive move of the window using the event currently being
+// handled. Does nothing if that is not an event for this window that a drag can
+// be started from, i.e. a mouse button being pressed or dragged.
+FLUTTER_DARWIN_EXPORT
+void InternalFlutter_Window_BeginMoveDrag(void* window);
+
 // NOLINTEND(google-objc-function-naming)
 }
 

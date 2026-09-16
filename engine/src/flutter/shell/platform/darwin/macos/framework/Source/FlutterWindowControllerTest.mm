@@ -463,6 +463,95 @@ TEST_F(FlutterWindowControllerTest, GetOffsetInParent) {
   [parentWindow close];
 }
 
+TEST_F(FlutterWindowControllerTest, DecorationAndWindowButtons) {
+  NSWindow* window = [[NSWindow alloc]
+      initWithContentRect:NSMakeRect(0, 0, 800, 600)
+                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                          NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
+                  backing:NSBackingStoreBuffered
+                    defer:NO];
+  [window setReleasedWhenClosed:NO];
+  void* handle = (__bridge void*)window;
+
+  EXPECT_TRUE(InternalFlutter_Window_IsDecorated(handle));
+
+  InternalFlutter_Window_SetDecorated(handle, false);
+  EXPECT_FALSE(InternalFlutter_Window_IsDecorated(handle));
+  EXPECT_NE(window.styleMask & NSWindowStyleMaskFullSizeContentView, 0u);
+  EXPECT_TRUE(window.titlebarAppearsTransparent);
+  EXPECT_EQ(window.titleVisibility, NSWindowTitleHidden);
+
+  // The window buttons are kept, and are now over the window's contents.
+  FlutterWindowRect rect = InternalFlutter_Window_GetWindowButtonsRect(handle);
+  EXPECT_GT(rect.width, 0);
+  EXPECT_GT(rect.height, 0);
+  EXPECT_GE(rect.top, 0);
+
+  InternalFlutter_Window_SetWindowButtonsVisible(handle, false);
+  EXPECT_TRUE([window standardWindowButton:NSWindowButtonCloseButton].isHidden);
+  EXPECT_TRUE([window standardWindowButton:NSWindowButtonMiniaturizeButton].isHidden);
+  EXPECT_TRUE([window standardWindowButton:NSWindowButtonZoomButton].isHidden);
+
+  // Hidden buttons take up no space.
+  FlutterWindowRect hiddenRect = InternalFlutter_Window_GetWindowButtonsRect(handle);
+  EXPECT_EQ(hiddenRect.width, 0);
+  EXPECT_EQ(hiddenRect.height, 0);
+
+  InternalFlutter_Window_SetWindowButtonsVisible(handle, true);
+  EXPECT_FALSE([window standardWindowButton:NSWindowButtonCloseButton].isHidden);
+
+  InternalFlutter_Window_SetDecorated(handle, true);
+  EXPECT_TRUE(InternalFlutter_Window_IsDecorated(handle));
+  EXPECT_EQ(window.styleMask & NSWindowStyleMaskFullSizeContentView, 0u);
+  EXPECT_FALSE(window.titlebarAppearsTransparent);
+  EXPECT_EQ(window.titleVisibility, NSWindowTitleVisible);
+
+  [window close];
+}
+
+TEST_F(FlutterWindowControllerTest, DecoratingAWindowWithoutATitleBar) {
+  NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 100, 100)
+                                                 styleMask:NSWindowStyleMaskBorderless
+                                                   backing:NSBackingStoreBuffered
+                                                     defer:NO];
+  [window setReleasedWhenClosed:NO];
+  void* handle = (__bridge void*)window;
+
+  // A window that never had a title bar, e.g. a popup, is not decorated and cannot be changed.
+  EXPECT_FALSE(InternalFlutter_Window_IsDecorated(handle));
+
+  InternalFlutter_Window_SetDecorated(handle, false);
+  EXPECT_FALSE(InternalFlutter_Window_IsDecorated(handle));
+  EXPECT_EQ(window.styleMask & NSWindowStyleMaskFullSizeContentView, 0u);
+
+  InternalFlutter_Window_SetDecorated(handle, true);
+  EXPECT_FALSE(InternalFlutter_Window_IsDecorated(handle));
+
+  // There are no window buttons to show or measure.
+  InternalFlutter_Window_SetWindowButtonsVisible(handle, true);
+  FlutterWindowRect rect = InternalFlutter_Window_GetWindowButtonsRect(handle);
+  EXPECT_EQ(rect.width, 0);
+  EXPECT_EQ(rect.height, 0);
+
+  [window close];
+}
+
+TEST_F(FlutterWindowControllerTest, BeginMoveDragWithUnrelatedEvent) {
+  NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 800, 600)
+                                                 styleMask:NSWindowStyleMaskTitled
+                                                   backing:NSBackingStoreBuffered
+                                                     defer:NO];
+  [window setReleasedWhenClosed:NO];
+  NSRect frame = window.frame;
+
+  // The event being handled, if any, is not one of this window's, so no drag is started and the
+  // window is left where it is.
+  InternalFlutter_Window_BeginMoveDrag((__bridge void*)window);
+  EXPECT_TRUE(NSEqualRects(window.frame, frame));
+
+  [window close];
+}
+
 const CFAbsoluteTime kTestTimeout = 30.0;
 
 TEST_F(FlutterWindowControllerSizeTest, SizedToContentResizable) {

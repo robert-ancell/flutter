@@ -65,6 +65,9 @@ struct _FlEngine {
   // Implements the flutter/accessibility channel.
   FlAccessibilityHandler* accessibility_handler;
 
+  // Exposes views to assistive technologies over AT-SPI.
+  FlAtspiApplication* atspi_application;
+
   // Process keyboard events.
   FlKeyboardManager* keyboard_manager;
 
@@ -617,6 +620,7 @@ static void fl_engine_dispose(GObject* object) {
   g_clear_object(&self->settings_handler);
   g_clear_object(&self->platform_handler);
   g_clear_object(&self->accessibility_handler);
+  g_clear_object(&self->atspi_application);
   g_clear_object(&self->keyboard_manager);
   g_clear_object(&self->text_input_handler);
   g_clear_object(&self->keyboard_handler);
@@ -719,6 +723,7 @@ static FlEngine* fl_engine_new_full(FlDartProject* project,
   self->mouse_cursor_handler =
       fl_mouse_cursor_handler_new(self->binary_messenger);
   self->accessibility_handler = fl_accessibility_handler_new(self);
+  self->atspi_application = fl_atspi_application_new();
 
   return self;
 }
@@ -933,6 +938,7 @@ gboolean fl_engine_start(FlEngine* self, GError** error) {
   if (result != kSuccess) {
     g_warning("Failed to enable accessibility features on Flutter engine");
   }
+  fl_atspi_application_start(self->atspi_application);
 
   fl_display_monitor_start(self->display_monitor);
 
@@ -1623,6 +1629,11 @@ void fl_engine_update_accessibility_features(FlEngine* self, int32_t flags) {
 void fl_engine_request_app_exit(FlEngine* self) {
   g_return_if_fail(FL_IS_ENGINE(self));
   fl_platform_handler_request_app_exit(self->platform_handler);
+}
+
+FlAtspiApplication* fl_engine_get_atspi_application(FlEngine* self) {
+  g_return_val_if_fail(FL_IS_ENGINE(self), nullptr);
+  return self->atspi_application;
 }
 
 FlKeyboardManager* fl_engine_get_keyboard_manager(FlEngine* self) {

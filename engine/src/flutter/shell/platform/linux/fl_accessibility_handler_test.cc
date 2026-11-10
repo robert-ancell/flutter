@@ -2,12 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Workaround missing C code compatibility in ATK header.
-// Fixed in https://gitlab.gnome.org/GNOME/at-spi2-core/-/merge_requests/219
-extern "C" {
-#include <atk/atk.h>
-}
-
 #include "flutter/shell/platform/linux/fl_accessibility_handler.h"
 #include "flutter/shell/platform/linux/fl_binary_messenger_private.h"
 #include "flutter/shell/platform/linux/fl_engine_private.h"
@@ -22,64 +16,6 @@ extern "C" {
 
 static constexpr int64_t kTextDirectionLtr = 0;
 static constexpr int64_t kAssertivenessAssertive = 1;
-
-// Enum copied from ATK 2.50, as the version we are building against doesn't
-// have this.
-typedef enum {
-  FL_ATK_LIVE_NONE,
-  FL_ATK_LIVE_POLITE,
-  FL_ATK_LIVE_ASSERTIVE
-} FlAtkLive;
-
-static void announcement_cb(FlViewAccessible* accessible,
-                            const gchar* message,
-                            gpointer user_data) {
-  EXPECT_STREQ(message, "MESSAGE");
-  gboolean* signalled = static_cast<gboolean*>(user_data);
-  *signalled = TRUE;
-}
-
-static void notification_polite_cb(FlViewAccessible* accessible,
-                                   const gchar* message,
-                                   FlAtkLive politeness,
-                                   gpointer user_data) {
-  EXPECT_STREQ(message, "MESSAGE");
-  EXPECT_EQ(politeness, FL_ATK_LIVE_POLITE);
-  gboolean* signalled = static_cast<gboolean*>(user_data);
-  *signalled = TRUE;
-}
-
-static void notification_assertive_cb(FlViewAccessible* accessible,
-                                      const gchar* message,
-                                      FlAtkLive politeness,
-                                      gpointer user_data) {
-  EXPECT_STREQ(message, "MESSAGE");
-  EXPECT_EQ(politeness, FL_ATK_LIVE_ASSERTIVE);
-  gboolean* signalled = static_cast<gboolean*>(user_data);
-  *signalled = TRUE;
-}
-
-static gboolean atk_supports_announce() {
-  return atk_get_major_version() == 2 && atk_get_minor_version() >= 46;
-}
-
-static void subscribe_signal(FlViewAccessible* accessible,
-                             gboolean* signalled,
-                             gboolean assertive) {
-  if (!atk_supports_announce()) {
-    return;
-  }
-
-  if (atk_get_major_version() == 2 && atk_get_minor_version() < 50) {
-    g_signal_connect(accessible, "announcement", G_CALLBACK(announcement_cb),
-                     signalled);
-  } else {
-    g_signal_connect(accessible, "notification",
-                     G_CALLBACK(assertive ? notification_assertive_cb
-                                          : notification_polite_cb),
-                     signalled);
-  }
-}
 
 class FlAccessibilityHandlerTest : public flutter::testing::LinuxTest {
  protected:
@@ -102,9 +38,6 @@ class FlAccessibilityHandlerTest : public flutter::testing::LinuxTest {
 };
 
 TEST_F(FlAccessibilityHandlerTest, Announce) {
-  gboolean signalled = FALSE;
-  subscribe_signal(fl_view_get_accessible(view), &signalled, FALSE);
-
   g_autoptr(FlValue) message = fl_value_new_map();
   fl_value_set_string_take(message, "type", fl_value_new_string("announce"));
   g_autoptr(FlValue) data = fl_value_new_map();
@@ -126,15 +59,9 @@ TEST_F(FlAccessibilityHandlerTest, Announce) {
       },
       &called);
   EXPECT_TRUE(called);
-  if (atk_supports_announce()) {
-    EXPECT_TRUE(signalled);
-  }
 }
 
 TEST_F(FlAccessibilityHandlerTest, AnnounceAssertive) {
-  gboolean signalled = FALSE;
-  subscribe_signal(fl_view_get_accessible(view), &signalled, TRUE);
-
   g_autoptr(FlValue) message = fl_value_new_map();
   fl_value_set_string_take(message, "type", fl_value_new_string("announce"));
   g_autoptr(FlValue) data = fl_value_new_map();
@@ -144,7 +71,7 @@ TEST_F(FlAccessibilityHandlerTest, AnnounceAssertive) {
   fl_value_set_string_take(data, "message", fl_value_new_string("MESSAGE"));
   fl_value_set_string_take(data, "textDirection",
                            fl_value_new_int(kTextDirectionLtr));
-  // Add optional assertiveness (not used in ATK)
+  // Add optional assertiveness.
   fl_value_set_string_take(data, "assertiveness",
                            fl_value_new_int(kAssertivenessAssertive));
 
@@ -159,15 +86,9 @@ TEST_F(FlAccessibilityHandlerTest, AnnounceAssertive) {
       },
       &called);
   EXPECT_TRUE(called);
-  if (atk_supports_announce()) {
-    EXPECT_TRUE(signalled);
-  }
 }
 
 TEST_F(FlAccessibilityHandlerTest, AnnounceUnknownView) {
-  gboolean signalled = FALSE;
-  subscribe_signal(fl_view_get_accessible(view), &signalled, FALSE);
-
   g_autoptr(FlValue) message = fl_value_new_map();
   fl_value_set_string_take(message, "type", fl_value_new_string("announce"));
   g_autoptr(FlValue) data = fl_value_new_map();
@@ -176,7 +97,7 @@ TEST_F(FlAccessibilityHandlerTest, AnnounceUnknownView) {
   fl_value_set_string_take(data, "message", fl_value_new_string("MESSAGE"));
   fl_value_set_string_take(data, "textDirection",
                            fl_value_new_int(kTextDirectionLtr));
-  // Add optional assertiveness (not used in ATK)
+  // Add optional assertiveness.
   fl_value_set_string_take(data, "assertiveness",
                            fl_value_new_int(kAssertivenessAssertive));
 
@@ -191,13 +112,9 @@ TEST_F(FlAccessibilityHandlerTest, AnnounceUnknownView) {
       },
       &called);
   EXPECT_TRUE(called);
-  EXPECT_FALSE(signalled);
 }
 
 TEST_F(FlAccessibilityHandlerTest, UnknownType) {
-  gboolean signalled = FALSE;
-  subscribe_signal(fl_view_get_accessible(view), &signalled, FALSE);
-
   // Unknown type, ignored by embedder.
   g_autoptr(FlValue) message = fl_value_new_map();
   fl_value_set_string_take(message, "type", fl_value_new_string("UNKNOWN"));
@@ -214,5 +131,4 @@ TEST_F(FlAccessibilityHandlerTest, UnknownType) {
       },
       &called);
   EXPECT_TRUE(called);
-  EXPECT_FALSE(signalled);
 }

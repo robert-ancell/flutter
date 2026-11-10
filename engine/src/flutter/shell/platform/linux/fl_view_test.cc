@@ -119,11 +119,12 @@ TEST_F(FlViewTest, SemanticsUpdate) {
       .node_count = 1, .nodes = nodes, .view_id = 0};
   g_signal_emit_by_name(engine, "update-semantics", &update);
 
-  FlViewAccessible* accessible = fl_view_get_accessible(view);
-  EXPECT_EQ(atk_object_get_n_accessible_children(ATK_OBJECT(accessible)), 1);
-  AtkObject* root_object =
-      atk_object_ref_accessible_child(ATK_OBJECT(accessible), 0);
-  EXPECT_STREQ(atk_object_get_name(root_object), "root");
+  FlAtspiAccessible* accessible =
+      FL_ATSPI_ACCESSIBLE(fl_view_get_accessible(view));
+  ASSERT_EQ(fl_atspi_accessible_get_n_children(accessible), 1u);
+  g_autofree gchar* name = fl_atspi_accessible_get_name(
+      fl_atspi_accessible_get_child(accessible, 0));
+  EXPECT_STREQ(name, "root");
 }
 
 // Check semantics update ignored for other view
@@ -141,8 +142,9 @@ TEST_F(FlViewTest, SemanticsUpdateOtherView) {
       .node_count = 1, .nodes = nodes, .view_id = 99};
   g_signal_emit_by_name(engine, "update-semantics", &update);
 
-  FlViewAccessible* accessible = fl_view_get_accessible(view);
-  EXPECT_EQ(atk_object_get_n_accessible_children(ATK_OBJECT(accessible)), 0);
+  FlAtspiAccessible* accessible =
+      FL_ATSPI_ACCESSIBLE(fl_view_get_accessible(view));
+  EXPECT_EQ(fl_atspi_accessible_get_n_children(accessible), 0u);
 }
 
 // Check secondary view is registered with engine.

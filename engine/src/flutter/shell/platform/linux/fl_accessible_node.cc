@@ -3,825 +3,849 @@
 // found in the LICENSE file.
 
 #include "flutter/shell/platform/linux/fl_accessible_node.h"
-#include "flutter/shell/platform/linux/fl_engine_private.h"
 
-// Maps Flutter semantics actions to ATK actions.
+#include <cmath>
+#include <cstdlib>
+
+#include "flutter/shell/platform/linux/fl_atspi_text.h"
+#include "flutter/shell/platform/linux/fl_view_accessible.h"
+#include "flutter/shell/platform/linux/public/flutter_linux/fl_standard_message_codec.h"
+
+// The most increase or decrease actions sent to set a value.
+static constexpr gint kMaxValueSteps = 1000;
+
+struct _FlAccessibleNode {
+  GObject parent_instance;
+
+  // The view this node is in. The view owns the node.
+  FlViewAccessible* view;
+
+  int32_t id;
+  FlAccessibleNode* parent;
+
+  FlutterSemanticsFlags flags;
+  int64_t actions;
+  gchar* label;
+  gchar* hint;
+  gchar* value;
+  gchar* tooltip;
+  gchar* identifier;
+  // In UTF-16 code units.
+  int32_t text_selection_base;
+  int32_t text_selection_extent;
+  FlutterRect rect;
+  FlutterTransformation transform;
+  GArray* children;
+  GArray* custom_actions;
+  int32_t heading_level;
+
+  // The value being set by repeatedly increasing or decreasing it.
+  gboolean has_target_value;
+  gdouble target_value;
+  gint remaining_steps;
+};
+
+// An action that can be performed on a node.
 typedef struct {
   FlutterSemanticsAction action;
   const gchar* name;
-} ActionData;
-static ActionData action_mapping[] = {
-    {kFlutterSemanticsActionTap, "Tap"},
-    {kFlutterSemanticsActionLongPress, "LongPress"},
-    {kFlutterSemanticsActionScrollLeft, "ScrollLeft"},
-    {kFlutterSemanticsActionScrollRight, "ScrollRight"},
-    {kFlutterSemanticsActionScrollUp, "ScrollUp"},
-    {kFlutterSemanticsActionScrollDown, "ScrollDown"},
-    {kFlutterSemanticsActionIncrease, "Increase"},
-    {kFlutterSemanticsActionDecrease, "Decrease"},
-    {kFlutterSemanticsActionShowOnScreen, "ShowOnScreen"},
-    {kFlutterSemanticsActionMoveCursorForwardByCharacter,
-     "MoveCursorForwardByCharacter"},
-    {kFlutterSemanticsActionMoveCursorBackwardByCharacter,
-     "MoveCursorBackwardByCharacter"},
-    {kFlutterSemanticsActionCopy, "Copy"},
-    {kFlutterSemanticsActionCut, "Cut"},
-    {kFlutterSemanticsActionPaste, "Paste"},
-    {kFlutterSemanticsActionDidGainAccessibilityFocus,
-     "DidGainAccessibilityFocus"},
-    {kFlutterSemanticsActionDidLoseAccessibilityFocus,
-     "DidLoseAccessibilityFocus"},
-    {kFlutterSemanticsActionCustomAction, "CustomAction"},
-    {kFlutterSemanticsActionDismiss, "Dismiss"},
-    {kFlutterSemanticsActionMoveCursorForwardByWord, "MoveCursorForwardByWord"},
-    {kFlutterSemanticsActionMoveCursorBackwardByWord,
-     "MoveCursorBackwardByWord"},
-    {kFlutterSemanticsActionFocus, "Focus"},
-    {kFlutterSemanticsActionExpand, "Expand"},
-    {kFlutterSemanticsActionCollapse, "Collapse"},
-    {static_cast<FlutterSemanticsAction>(0), nullptr}};
+  const gchar* description;
+  // For custom actions.
+  int32_t custom_action_id;
+} NodeAction;
 
-struct FlAccessibleNodePrivate {
-  AtkObject parent_instance;
-
-  // Weak reference to the engine this node is created for.
-  GWeakRef engine;
-
-  /// The unique identifier of the view to which this node belongs.
-  FlutterViewId view_id;
-
-  // Weak reference to the parent node of this one or %NULL.
-  GWeakRef parent;
-
-  int32_t node_id;
-  gchar* name;
-  gint index;
-  gint x, y, width, height;
-  GPtrArray* actions;
-  gsize actions_length;
-  GPtrArray* children;
-  FlutterSemanticsFlags flags;
-};
-
-enum { PROP_0, PROP_ENGINE, PROP_VIEW_ID, PROP_ID, PROP_LAST };
-
-#define FL_ACCESSIBLE_NODE_GET_PRIVATE(node)                          \
-  ((FlAccessibleNodePrivate*)fl_accessible_node_get_instance_private( \
-      FL_ACCESSIBLE_NODE(node)))
-
-static void fl_accessible_node_component_interface_init(
-    AtkComponentIface* iface);
-static void fl_accessible_node_action_interface_init(AtkActionIface* iface);
-static void fl_accessible_node_text_interface_init(AtkTextIface* iface);
+static void fl_accessible_node_atspi_accessible_iface_init(
+    FlAtspiAccessibleInterface* iface);
 
 G_DEFINE_TYPE_WITH_CODE(
     FlAccessibleNode,
     fl_accessible_node,
-    ATK_TYPE_OBJECT,
-    G_ADD_PRIVATE(FlAccessibleNode)
-        G_IMPLEMENT_INTERFACE(ATK_TYPE_COMPONENT,
-                              fl_accessible_node_component_interface_init)
-            G_IMPLEMENT_INTERFACE(ATK_TYPE_ACTION,
-                                  fl_accessible_node_action_interface_init)
-                G_IMPLEMENT_INTERFACE(ATK_TYPE_TEXT,
-                                      fl_accessible_node_text_interface_init))
+    G_TYPE_OBJECT,
+    G_IMPLEMENT_INTERFACE(fl_atspi_accessible_get_type(),
+                          fl_accessible_node_atspi_accessible_iface_init))
 
-// Returns TRUE if [flags] indicate this element is checkable.
-static gboolean is_checkable(FlutterSemanticsFlags flags) {
-  return flags.is_checked != kFlutterCheckStateNone ||
-         flags.is_toggled != kFlutterTristateNone;
-}
-
-// Returns TRUE if [flags] indicate this element is checked.
-static gboolean is_checked(FlutterSemanticsFlags flags) {
-  return flags.is_checked == kFlutterCheckStateTrue ||
-         flags.is_toggled == kFlutterTristateTrue;
-}
-
-// Returns TRUE if [flags] indicate this element is focusable.
-static gboolean is_focusable(FlutterSemanticsFlags flags) {
-  return flags.is_focused != kFlutterTristateNone;
-}
-
-// Returns TRUE if [flags] indicate this element is focused.
-static gboolean is_focused(FlutterSemanticsFlags flags) {
-  return flags.is_focused == kFlutterTristateTrue;
-}
-
-// Returns TRUE if [flags] indicate this element is selected.
-static gboolean is_selected(FlutterSemanticsFlags flags) {
-  return flags.is_selected == kFlutterTristateTrue;
-}
-
-// Returns TRUE if [flags] indicate this element is sensitive.
-static gboolean is_sensitive(FlutterSemanticsFlags flags) {
-  return flags.is_enabled != kFlutterTristateNone;
-}
-
-// Returns TRUE if [flags] indicate this element is enabled.
-static gboolean is_enabled(FlutterSemanticsFlags flags) {
-  return flags.is_enabled == kFlutterTristateTrue;
-}
-
-// Returns TRUE if [action] is set in [actions].
-static gboolean has_action(FlutterSemanticsAction actions,
+static gboolean has_action(FlAccessibleNode* self,
                            FlutterSemanticsAction action) {
-  return (actions & action) != 0;
+  return (self->actions & action) != 0;
 }
 
-// Gets the nth action.
-static ActionData* get_action(FlAccessibleNodePrivate* priv, gint index) {
-  if (index < 0 || static_cast<guint>(index) >= priv->actions->len) {
+static FlAccessibleNode* get_child_node(FlAccessibleNode* self, gsize index) {
+  if (index >= self->children->len) {
     return nullptr;
   }
-  return static_cast<ActionData*>(g_ptr_array_index(priv->actions, index));
+  return fl_view_accessible_lookup_node(
+      self->view, g_array_index(self->children, int32_t, index));
 }
 
-// Checks if [object] is in [children].
-static gboolean has_child(GPtrArray* children, AtkObject* object) {
-  for (guint i = 0; i < children->len; i++) {
-    if (g_ptr_array_index(children, i) == object) {
-      return TRUE;
+static void send_action(FlAccessibleNode* self,
+                        FlutterSemanticsAction action,
+                        FlValue* data) {
+  g_autoptr(GBytes) message = nullptr;
+  if (data != nullptr) {
+    g_autoptr(FlStandardMessageCodec) codec = fl_standard_message_codec_new();
+    message =
+        fl_message_codec_encode_message(FL_MESSAGE_CODEC(codec), data, nullptr);
+  }
+  fl_view_accessible_dispatch_action(self->view, self->id, action, message);
+}
+
+// Whether this node is a route without its own name.
+static gboolean is_unnamed_route(FlAccessibleNode* self) {
+  return self->flags.scopes_route && !self->flags.names_route && self->id != 0;
+}
+
+static gchar* get_name(FlAccessibleNode* self);
+
+// The name of the route this node scopes, from the first descendant that
+// names it.
+static gchar* get_route_name(FlAccessibleNode* self) {
+  for (guint i = 0; i < self->children->len; i++) {
+    FlAccessibleNode* child = get_child_node(self, i);
+    if (child == nullptr) {
+      continue;
+    }
+    if (child->flags.names_route && !child->flags.scopes_route) {
+      g_autofree gchar* name = get_name(child);
+      if (name[0] != '\0') {
+        return static_cast<gchar*>(g_steal_pointer(&name));
+      }
+    }
+    // Nested routes are named separately.
+    if (child->flags.scopes_route) {
+      continue;
+    }
+    g_autofree gchar* name = get_route_name(child);
+    if (name[0] != '\0') {
+      return static_cast<gchar*>(g_steal_pointer(&name));
     }
   }
-
-  return FALSE;
+  return g_strdup("");
 }
 
-static void fl_accessible_node_set_property(GObject* object,
-                                            guint prop_id,
-                                            const GValue* value,
-                                            GParamSpec* pspec) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(object);
-  switch (prop_id) {
-    case PROP_ENGINE:
-      g_weak_ref_set(&priv->engine, g_value_get_object(value));
-      break;
-    case PROP_VIEW_ID:
-      priv->view_id = g_value_get_int64(value);
-      break;
-    case PROP_ID:
-      priv->node_id = g_value_get_int(value);
-      break;
-    default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
-      break;
+static gchar* get_name(FlAccessibleNode* self) {
+  if (self->label[0] != '\0') {
+    return g_strdup(self->label);
   }
+  if (is_unnamed_route(self)) {
+    return get_route_name(self);
+  }
+  // Icon buttons are often only described by their tooltip.
+  return g_strdup(self->tooltip);
 }
 
-static void fl_accessible_node_dispose(GObject* object) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(object);
-
-  g_weak_ref_clear(&priv->engine);
-  g_weak_ref_clear(&priv->parent);
-  g_clear_pointer(&priv->name, g_free);
-  g_clear_pointer(&priv->actions, g_ptr_array_unref);
-  g_clear_pointer(&priv->children, g_ptr_array_unref);
-
-  G_OBJECT_CLASS(fl_accessible_node_parent_class)->dispose(object);
+static FlAtspiRole get_role(FlAccessibleNode* self) {
+  const FlutterSemanticsFlags* flags = &self->flags;
+  if (flags->is_text_field) {
+    return flags->is_obscured ? FL_ATSPI_ROLE_PASSWORD_TEXT
+                              : FL_ATSPI_ROLE_ENTRY;
+  }
+  if (flags->is_slider) {
+    return FL_ATSPI_ROLE_SLIDER;
+  }
+  if (flags->is_link) {
+    return FL_ATSPI_ROLE_LINK;
+  }
+  if (flags->is_header) {
+    return FL_ATSPI_ROLE_HEADING;
+  }
+  if (flags->is_image) {
+    return FL_ATSPI_ROLE_IMAGE;
+  }
+  if (flags->is_checked != kFlutterCheckStateNone) {
+    return flags->is_in_mutually_exclusive_group ? FL_ATSPI_ROLE_RADIO_BUTTON
+                                                 : FL_ATSPI_ROLE_CHECK_BOX;
+  }
+  if (flags->is_toggled != kFlutterTristateNone) {
+    return FL_ATSPI_ROLE_SWITCH;
+  }
+  if (flags->is_button || flags->is_keyboard_key) {
+    return FL_ATSPI_ROLE_BUTTON;
+  }
+  if (flags->scopes_route && flags->names_route) {
+    return FL_ATSPI_ROLE_DIALOG;
+  }
+  if (flags->has_implicit_scrolling) {
+    return FL_ATSPI_ROLE_SCROLL_PANE;
+  }
+  if (self->children->len == 0 && self->label[0] != '\0') {
+    return FL_ATSPI_ROLE_LABEL;
+  }
+  return FL_ATSPI_ROLE_PANEL;
 }
 
-// Implements AtkObject::get_name.
-static const gchar* fl_accessible_node_get_name(AtkObject* accessible) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(accessible);
-  return priv->name;
-}
-
-// Implements AtkObject::get_parent.
-static AtkObject* fl_accessible_node_get_parent(AtkObject* accessible) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(accessible);
-  g_autoptr(AtkObject) parent = ATK_OBJECT(g_weak_ref_get(&priv->parent));
-  return parent;
-}
-
-// Implements AtkObject::get_index_in_parent.
-static gint fl_accessible_node_get_index_in_parent(AtkObject* accessible) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(accessible);
-  return priv->index;
-}
-
-// Implements AtkObject::get_n_children.
-static gint fl_accessible_node_get_n_children(AtkObject* accessible) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(accessible);
-  return priv->children->len;
-}
-
-// Implements AtkObject::ref_child.
-static AtkObject* fl_accessible_node_ref_child(AtkObject* accessible, gint i) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(accessible);
-
-  if (i < 0 || static_cast<guint>(i) >= priv->children->len) {
-    return nullptr;
-  }
-
-  return ATK_OBJECT(g_object_ref(g_ptr_array_index(priv->children, i)));
-}
-
-// Implements AtkObject::get_role.
-static AtkRole fl_accessible_node_get_role(AtkObject* accessible) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(accessible);
-  if (priv->flags.is_button) {
-    return ATK_ROLE_PUSH_BUTTON;
-  }
-  if (priv->flags.is_in_mutually_exclusive_group &&
-      priv->flags.is_checked != kFlutterCheckStateNone) {
-    return ATK_ROLE_RADIO_BUTTON;
-  }
-  if (priv->flags.is_checked != kFlutterCheckStateNone) {
-    return ATK_ROLE_CHECK_BOX;
-  }
-  if (priv->flags.is_toggled != kFlutterTristateNone) {
-    return ATK_ROLE_TOGGLE_BUTTON;
-  }
-  if (priv->flags.is_slider) {
-    return ATK_ROLE_SLIDER;
-  }
-  if (priv->flags.is_text_field && priv->flags.is_obscured) {
-    return ATK_ROLE_PASSWORD_TEXT;
-  }
-  if (priv->flags.is_text_field) {
-    return ATK_ROLE_TEXT;
-  }
-  if (priv->flags.is_header) {
-    return ATK_ROLE_HEADING;
-  }
-  if (priv->flags.is_link) {
-    return ATK_ROLE_LINK;
-  }
-  if (priv->flags.is_image) {
-    return ATK_ROLE_IMAGE;
-  }
-
-  return ATK_ROLE_PANEL;
-}
-
-// Implements AtkObject::ref_state_set.
-static AtkStateSet* fl_accessible_node_ref_state_set(AtkObject* accessible) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(accessible);
-
-  AtkStateSet* state_set = atk_state_set_new();
-
-  if (!priv->flags.is_obscured) {
-    atk_state_set_add_state(state_set, ATK_STATE_SHOWING);
-  }
-  if (!priv->flags.is_hidden) {
-    atk_state_set_add_state(state_set, ATK_STATE_VISIBLE);
-  }
-  if (is_checkable(priv->flags)) {
-    atk_state_set_add_state(state_set, ATK_STATE_CHECKABLE);
-  }
-  if (is_checked(priv->flags)) {
-    atk_state_set_add_state(state_set, ATK_STATE_CHECKED);
-  }
-  if (is_focusable(priv->flags)) {
-    atk_state_set_add_state(state_set, ATK_STATE_FOCUSABLE);
-  }
-  if (is_focused(priv->flags)) {
-    atk_state_set_add_state(state_set, ATK_STATE_FOCUSED);
-  }
-  if (is_selected(priv->flags)) {
-    atk_state_set_add_state(state_set, ATK_STATE_SELECTED);
-  }
-  if (is_enabled(priv->flags)) {
-    atk_state_set_add_state(state_set, ATK_STATE_ENABLED);
-  }
-  if (is_sensitive(priv->flags)) {
-    atk_state_set_add_state(state_set, ATK_STATE_SENSITIVE);
-  }
-  if (priv->flags.is_read_only) {
-    atk_state_set_add_state(state_set, ATK_STATE_READ_ONLY);
-  }
-  if (priv->flags.is_text_field) {
-    atk_state_set_add_state(state_set, ATK_STATE_EDITABLE);
-  }
-
-  return state_set;
-}
-
-// Implements AtkComponent::get_extents.
-static void fl_accessible_node_get_extents(AtkComponent* component,
-                                           gint* x,
-                                           gint* y,
-                                           gint* width,
-                                           gint* height,
-                                           AtkCoordType coord_type) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(component);
-
-  *x = 0;
-  *y = 0;
-  g_autoptr(AtkObject) parent = ATK_OBJECT(g_weak_ref_get(&priv->parent));
-  if (parent != nullptr) {
-    atk_component_get_extents(ATK_COMPONENT(parent), x, y, nullptr, nullptr,
-                              coord_type);
-  }
-
-  *x += priv->x;
-  *y += priv->y;
-  *width = priv->width;
-  *height = priv->height;
-}
-
-// Implements AtkComponent::get_layer.
-static AtkLayer fl_accessible_node_get_layer(AtkComponent* component) {
-  return ATK_LAYER_WIDGET;
-}
-
-// Implements AtkAction::do_action.
-static gboolean fl_accessible_node_do_action(AtkAction* action, gint i) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(action);
-
-  g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&priv->engine));
-  if (engine == nullptr) {
+// Parses a numeric value such as "50%" or "3.5". Returns FALSE if |value|
+// isn't one.
+static gboolean parse_number(const gchar* value,
+                             gdouble* number,
+                             gboolean* percent) {
+  if (value[0] == '\0') {
     return FALSE;
   }
-
-  ActionData* data = get_action(priv, i);
-  if (data == nullptr) {
+  gchar* end = nullptr;
+  *number = g_ascii_strtod(value, &end);
+  if (end == value) {
     return FALSE;
   }
+  while (*end == ' ') {
+    end++;
+  }
+  *percent = *end == '%';
+  if (*percent) {
+    end++;
+  }
+  return *end == '\0' && std::isfinite(*number);
+}
 
-  fl_accessible_node_perform_action(FL_ACCESSIBLE_NODE(action), data->action,
-                                    nullptr);
+// Applies |transform| to the point (x, y).
+static void transform_point(const FlutterTransformation* transform,
+                            gdouble* x,
+                            gdouble* y) {
+  gdouble tx =
+      transform->scaleX * *x + transform->skewX * *y + transform->transX;
+  gdouble ty =
+      transform->skewY * *x + transform->scaleY * *y + transform->transY;
+  gdouble w = transform->pers0 * *x + transform->pers1 * *y + transform->pers2;
+  if (w != 0 && w != 1) {
+    tx /= w;
+    ty /= w;
+  }
+  *x = tx;
+  *y = ty;
+}
+
+// Returns the standard and custom actions of this node.
+static GArray* get_action_list(FlAccessibleNode* self) {
+  static const struct {
+    FlutterSemanticsAction action;
+    const gchar* name;
+  } kActions[] = {
+      {kFlutterSemanticsActionTap, "click"},
+      {kFlutterSemanticsActionLongPress, "long-press"},
+      {kFlutterSemanticsActionIncrease, "increase"},
+      {kFlutterSemanticsActionDecrease, "decrease"},
+      {kFlutterSemanticsActionExpand, "expand"},
+      {kFlutterSemanticsActionCollapse, "collapse"},
+      {kFlutterSemanticsActionDismiss, "dismiss"},
+      {kFlutterSemanticsActionScrollUp, "scroll-up"},
+      {kFlutterSemanticsActionScrollDown, "scroll-down"},
+      {kFlutterSemanticsActionScrollLeft, "scroll-left"},
+      {kFlutterSemanticsActionScrollRight, "scroll-right"},
+      {kFlutterSemanticsActionCopy, "copy"},
+      {kFlutterSemanticsActionCut, "cut"},
+      {kFlutterSemanticsActionPaste, "paste"},
+  };
+
+  GArray* actions = g_array_new(FALSE, TRUE, sizeof(NodeAction));
+  for (const auto& entry : kActions) {
+    if (has_action(self, entry.action)) {
+      NodeAction action = {entry.action, entry.name, "", 0};
+      g_array_append_val(actions, action);
+    }
+  }
+  for (guint i = 0; i < self->custom_actions->len; i++) {
+    int32_t id = g_array_index(self->custom_actions, int32_t, i);
+    const gchar* label;
+    FlutterSemanticsAction override_action;
+    if (!fl_view_accessible_get_custom_action(self->view, id, &label,
+                                              &override_action)) {
+      continue;
+    }
+    if (override_action != 0) {
+      // Describes a standard action, e.g. a long press that "Pins" an item.
+      for (guint j = 0; j < actions->len; j++) {
+        NodeAction* action = &g_array_index(actions, NodeAction, j);
+        if (action->action == override_action) {
+          action->description = label;
+        }
+      }
+      continue;
+    }
+    NodeAction action = {kFlutterSemanticsActionCustomAction, label, label, id};
+    g_array_append_val(actions, action);
+  }
+  return actions;
+}
+
+static FlAtspiAccessible* fl_accessible_node_get_parent(
+    FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  if (self->parent != nullptr) {
+    return FL_ATSPI_ACCESSIBLE(self->parent);
+  }
+  return self->id == 0 ? FL_ATSPI_ACCESSIBLE(self->view) : nullptr;
+}
+
+static gsize fl_accessible_node_get_n_children(FlAtspiAccessible* accessible) {
+  return FL_ACCESSIBLE_NODE(accessible)->children->len;
+}
+
+static FlAtspiAccessible* fl_accessible_node_get_child(
+    FlAtspiAccessible* accessible,
+    gsize index) {
+  FlAccessibleNode* child =
+      get_child_node(FL_ACCESSIBLE_NODE(accessible), index);
+  return child != nullptr ? FL_ATSPI_ACCESSIBLE(child) : nullptr;
+}
+
+static FlAtspiRole fl_accessible_node_get_role(FlAtspiAccessible* accessible) {
+  return get_role(FL_ACCESSIBLE_NODE(accessible));
+}
+
+static gchar* fl_accessible_node_get_name(FlAtspiAccessible* accessible) {
+  return get_name(FL_ACCESSIBLE_NODE(accessible));
+}
+
+static gchar* fl_accessible_node_get_description(
+    FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  if (self->hint[0] != '\0') {
+    return g_strdup(self->hint);
+  }
+  return g_strdup(self->label[0] == '\0' ? "" : self->tooltip);
+}
+
+static gchar* fl_accessible_node_get_help_text(FlAtspiAccessible* accessible) {
+  return g_strdup(FL_ACCESSIBLE_NODE(accessible)->tooltip);
+}
+
+static gchar* fl_accessible_node_get_accessible_id(
+    FlAtspiAccessible* accessible) {
+  return g_strdup(FL_ACCESSIBLE_NODE(accessible)->identifier);
+}
+
+static void set_state(guint64* states, FlAtspiState state, gboolean value) {
+  if (value) {
+    *states |= FL_ATSPI_STATE_BIT(state);
+  } else {
+    *states &= ~FL_ATSPI_STATE_BIT(state);
+  }
+}
+
+static guint64 fl_accessible_node_get_states(FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  const FlutterSemanticsFlags* flags = &self->flags;
+  guint64 states = 0;
+  gboolean enabled = flags->is_enabled != kFlutterTristateFalse;
+  set_state(&states, FL_ATSPI_STATE_ENABLED, enabled);
+  set_state(&states, FL_ATSPI_STATE_SENSITIVE, enabled);
+  set_state(&states, FL_ATSPI_STATE_VISIBLE, !flags->is_hidden);
+  set_state(&states, FL_ATSPI_STATE_SHOWING, !flags->is_hidden);
+
+  set_state(&states, FL_ATSPI_STATE_FOCUSABLE,
+            flags->is_focused != kFlutterTristateNone ||
+                has_action(self, kFlutterSemanticsActionFocus));
+  set_state(&states, FL_ATSPI_STATE_FOCUSED,
+            fl_accessible_node_is_focused(self));
+
+  if (flags->is_checked != kFlutterCheckStateNone) {
+    set_state(&states, FL_ATSPI_STATE_CHECKABLE, TRUE);
+    set_state(&states, FL_ATSPI_STATE_CHECKED,
+              flags->is_checked == kFlutterCheckStateTrue);
+    set_state(&states, FL_ATSPI_STATE_INDETERMINATE,
+              flags->is_checked == kFlutterCheckStateMixed);
+  }
+  if (flags->is_toggled != kFlutterTristateNone) {
+    set_state(&states, FL_ATSPI_STATE_CHECKABLE, TRUE);
+    set_state(&states, FL_ATSPI_STATE_CHECKED,
+              flags->is_toggled == kFlutterTristateTrue);
+  }
+  if (flags->is_selected != kFlutterTristateNone) {
+    set_state(&states, FL_ATSPI_STATE_SELECTABLE, TRUE);
+    set_state(&states, FL_ATSPI_STATE_SELECTED,
+              flags->is_selected == kFlutterTristateTrue);
+  }
+  if (flags->is_expanded != kFlutterTristateNone) {
+    gboolean expanded = flags->is_expanded == kFlutterTristateTrue;
+    set_state(&states, FL_ATSPI_STATE_EXPANDABLE, TRUE);
+    set_state(&states, FL_ATSPI_STATE_EXPANDED, expanded);
+    set_state(&states, FL_ATSPI_STATE_COLLAPSED, !expanded);
+  }
+  set_state(&states, FL_ATSPI_STATE_REQUIRED,
+            flags->is_required == kFlutterTristateTrue);
+  if (flags->is_text_field) {
+    set_state(&states, FL_ATSPI_STATE_EDITABLE, !flags->is_read_only);
+    set_state(&states, FL_ATSPI_STATE_READ_ONLY, flags->is_read_only);
+    set_state(&states, FL_ATSPI_STATE_MULTI_LINE, flags->is_multiline);
+    set_state(&states, FL_ATSPI_STATE_SINGLE_LINE, !flags->is_multiline);
+    set_state(&states, FL_ATSPI_STATE_SELECTABLE_TEXT, TRUE);
+  }
+  set_state(&states, FL_ATSPI_STATE_HAS_TOOLTIP, self->tooltip[0] != '\0');
+  return states;
+}
+
+static GHashTable* fl_accessible_node_get_attributes(
+    FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  GHashTable* attributes =
+      g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+  if (self->flags.is_header && self->heading_level > 0) {
+    g_hash_table_insert(attributes, g_strdup("level"),
+                        g_strdup_printf("%d", self->heading_level));
+  }
+  if (self->flags.is_live_region) {
+    g_hash_table_insert(attributes, g_strdup("live"), g_strdup("polite"));
+    g_hash_table_insert(attributes, g_strdup("container-live"),
+                        g_strdup("polite"));
+  }
+  if (self->identifier[0] != '\0') {
+    g_hash_table_insert(attributes, g_strdup("id"), g_strdup(self->identifier));
+  }
+  if (self->flags.is_text_field && self->hint[0] != '\0') {
+    g_hash_table_insert(attributes, g_strdup("placeholder-text"),
+                        g_strdup(self->hint));
+  }
+  return attributes;
+}
+
+static GPtrArray* fl_accessible_node_get_relations(
+    FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  GPtrArray* relations = g_ptr_array_new_with_free_func(
+      reinterpret_cast<GDestroyNotify>(fl_atspi_relation_free));
+  if (get_role(self) == FL_ATSPI_ROLE_RADIO_BUTTON && self->parent != nullptr) {
+    FlAtspiRelation* group = fl_atspi_relation_new(FL_ATSPI_RELATION_MEMBER_OF);
+    for (guint i = 0; i < self->parent->children->len; i++) {
+      FlAccessibleNode* sibling = get_child_node(self->parent, i);
+      if (sibling != nullptr &&
+          get_role(sibling) == FL_ATSPI_ROLE_RADIO_BUTTON) {
+        g_ptr_array_add(group->targets, g_object_ref(sibling));
+      }
+    }
+    g_ptr_array_add(relations, group);
+  }
+  return relations;
+}
+
+static gboolean fl_accessible_node_get_extents(FlAtspiAccessible* accessible,
+                                               GdkRectangle* extents) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  gdouble xs[4] = {self->rect.left, self->rect.right, self->rect.right,
+                   self->rect.left};
+  gdouble ys[4] = {self->rect.top, self->rect.top, self->rect.bottom,
+                   self->rect.bottom};
+  for (FlAccessibleNode* node = self; node != nullptr; node = node->parent) {
+    for (int i = 0; i < 4; i++) {
+      transform_point(&node->transform, &xs[i], &ys[i]);
+    }
+  }
+  gdouble ratio = fl_view_accessible_get_pixel_ratio(self->view);
+  if (ratio <= 0) {
+    ratio = 1;
+  }
+  gdouble left = xs[0], right = xs[0], top = ys[0], bottom = ys[0];
+  for (int i = 1; i < 4; i++) {
+    left = MIN(left, xs[i]);
+    right = MAX(right, xs[i]);
+    top = MIN(top, ys[i]);
+    bottom = MAX(bottom, ys[i]);
+  }
+  extents->x = static_cast<gint>(std::floor(left / ratio));
+  extents->y = static_cast<gint>(std::floor(top / ratio));
+  extents->width = static_cast<gint>(std::ceil(right / ratio)) - extents->x;
+  extents->height = static_cast<gint>(std::ceil(bottom / ratio)) - extents->y;
   return TRUE;
 }
 
-// Implements AtkAction::get_n_actions.
-static gint fl_accessible_node_get_n_actions(AtkAction* action) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(action);
-  return priv->actions->len;
+static gboolean fl_accessible_node_grab_focus(FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  if (!has_action(self, kFlutterSemanticsActionFocus)) {
+    return FALSE;
+  }
+  send_action(self, kFlutterSemanticsActionFocus, nullptr);
+  return TRUE;
 }
 
-// Implements AtkAction::get_name.
-static const gchar* fl_accessible_node_get_name(AtkAction* action, gint i) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(action);
+static gboolean fl_accessible_node_scroll_to(FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  if (!has_action(self, kFlutterSemanticsActionShowOnScreen)) {
+    return FALSE;
+  }
+  send_action(self, kFlutterSemanticsActionShowOnScreen, nullptr);
+  return TRUE;
+}
 
-  ActionData* data = get_action(priv, i);
-  if (data == nullptr) {
+static GPtrArray* fl_accessible_node_get_actions(
+    FlAtspiAccessible* accessible) {
+  g_autoptr(GArray) actions = get_action_list(FL_ACCESSIBLE_NODE(accessible));
+  GPtrArray* result = g_ptr_array_new_with_free_func(
+      reinterpret_cast<GDestroyNotify>(fl_atspi_action_free));
+  for (guint i = 0; i < actions->len; i++) {
+    NodeAction* action = &g_array_index(actions, NodeAction, i);
+    g_ptr_array_add(result,
+                    fl_atspi_action_new(action->name, action->description));
+  }
+  return result;
+}
+
+static gboolean fl_accessible_node_do_action(FlAtspiAccessible* accessible,
+                                             gsize index) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  g_autoptr(GArray) actions = get_action_list(self);
+  if (index >= actions->len) {
+    return FALSE;
+  }
+  NodeAction* action = &g_array_index(actions, NodeAction, index);
+  g_autoptr(FlValue) data =
+      action->action == kFlutterSemanticsActionCustomAction
+          ? fl_value_new_int(action->custom_action_id)
+          : nullptr;
+  send_action(self, action->action, data);
+  return TRUE;
+}
+
+static FlAtspiValue* fl_accessible_node_get_value(
+    FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  if (!self->flags.is_slider &&
+      !has_action(self, kFlutterSemanticsActionIncrease) &&
+      !has_action(self, kFlutterSemanticsActionDecrease)) {
     return nullptr;
   }
-
-  return data->name;
+  gdouble number;
+  gboolean percent;
+  if (!parse_number(self->value, &number, &percent)) {
+    return fl_atspi_value_new(0, 0, 0, 0, self->value);
+  }
+  return fl_atspi_value_new(MIN(0.0, number),
+                            percent || number <= 100 ? 100 : number, 0, number,
+                            self->value);
 }
 
-// Implements FlAccessibleNode::set_name.
-static void fl_accessible_node_set_name_impl(FlAccessibleNode* self,
-                                             const gchar* name) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(self);
-  g_free(priv->name);
-  priv->name = g_strdup(name);
+static gboolean fl_accessible_node_set_value(FlAtspiAccessible* accessible,
+                                             gdouble value) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  g_autoptr(FlAtspiValue) current = fl_accessible_node_get_value(accessible);
+  if (current == nullptr) {
+    return FALSE;
+  }
+  self->has_target_value = FALSE;
+  if (value == current->current) {
+    return TRUE;
+  }
+  // Flutter can only step the value, so step until the target is reached.
+  FlutterSemanticsAction action = value > current->current
+                                      ? kFlutterSemanticsActionIncrease
+                                      : kFlutterSemanticsActionDecrease;
+  if (!has_action(self, action)) {
+    return FALSE;
+  }
+  self->has_target_value = TRUE;
+  self->target_value = value;
+  self->remaining_steps = kMaxValueSteps;
+  send_action(self, action, nullptr);
+  return TRUE;
 }
 
-// Implements FlAccessibleNode::set_extents.
-static void fl_accessible_node_set_extents_impl(FlAccessibleNode* self,
-                                                gint x,
-                                                gint y,
-                                                gint width,
-                                                gint height) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(self);
-  priv->x = x;
-  priv->y = y;
-  priv->width = width;
-  priv->height = height;
+static gboolean fl_accessible_node_has_text(FlAtspiAccessible* accessible) {
+  return FL_ACCESSIBLE_NODE(accessible)->flags.is_text_field;
 }
 
-// Check two boolean flags are different, in a way that handles true values
-// being different (e.g. 1 and 2).
-static bool flag_changed(bool old_flag, bool new_flag) {
-  return !old_flag != !new_flag;
+static gboolean fl_accessible_node_is_editable_text(
+    FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  return self->flags.is_text_field && !self->flags.is_read_only;
 }
 
-// Implements FlAccessibleNode::set_flags.
-static void fl_accessible_node_set_flags_impl(FlAccessibleNode* self,
-                                              FlutterSemanticsFlags* flags) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(self);
-
-  FlutterSemanticsFlags old_flags = priv->flags;
-  priv->flags = *flags;
-
-  if (flag_changed(old_flags.is_obscured, flags->is_obscured)) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_SHOWING,
-                                   !flags->is_obscured);
-  }
-  if (flag_changed(old_flags.is_hidden, flags->is_hidden)) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_VISIBLE,
-                                   !flags->is_hidden);
-  }
-  if (flag_changed(is_checkable(old_flags), is_checkable(priv->flags))) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_CHECKABLE,
-                                   is_checkable(priv->flags));
-  }
-  if (flag_changed(is_checked(old_flags), is_checked(priv->flags))) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_CHECKED,
-                                   is_checked(priv->flags));
-  }
-  if (flag_changed(is_focusable(old_flags), is_focusable(priv->flags))) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_FOCUSABLE,
-                                   is_focusable(priv->flags));
-  }
-  if (flag_changed(is_focused(old_flags), is_focused(priv->flags))) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_FOCUSED,
-                                   is_focused(priv->flags));
-  }
-  if (flag_changed(is_selected(old_flags), is_selected(priv->flags))) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_SELECTED,
-                                   is_selected(priv->flags));
-  }
-  if (flag_changed(is_sensitive(old_flags), is_sensitive(priv->flags))) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_SENSITIVE,
-                                   is_sensitive(priv->flags));
-  }
-  if (flag_changed(is_enabled(old_flags), is_enabled(priv->flags))) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_ENABLED,
-                                   is_enabled(priv->flags));
-  }
-  if (flag_changed(old_flags.is_read_only, flags->is_read_only)) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_READ_ONLY,
-                                   flags->is_read_only);
-  }
-  if (flag_changed(old_flags.is_text_field, flags->is_text_field)) {
-    atk_object_notify_state_change(ATK_OBJECT(self), ATK_STATE_EDITABLE,
-                                   flags->is_text_field);
-  }
+static gchar* fl_accessible_node_get_text(FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  return g_strdup(self->flags.is_text_field ? self->value : "");
 }
 
-// Implements FlAccessibleNode::set_actions.
-static void fl_accessible_node_set_actions_impl(
-    FlAccessibleNode* self,
-    FlutterSemanticsAction actions) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(self);
+static gint fl_accessible_node_get_caret_offset(FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  if (!self->flags.is_text_field || self->text_selection_extent < 0) {
+    return -1;
+  }
+  return fl_atspi_text_utf16_to_offset(self->value,
+                                       self->text_selection_extent);
+}
 
-  // NOTE(robert-ancell): It appears that AtkAction doesn't have a method of
-  // notifying that actions have changed, and even if it did an ATK client
-  // might access the old IDs before checking for new ones. Keep an eye
-  // out for a case where Flutter changes the actions on an item and see
-  // if we can resolve this in another way.
-  g_ptr_array_remove_range(priv->actions, 0, priv->actions->len);
-  for (int i = 0; action_mapping[i].name != nullptr; i++) {
-    if (has_action(actions, action_mapping[i].action)) {
-      g_ptr_array_add(priv->actions, &action_mapping[i]);
+static gboolean fl_accessible_node_get_selection(FlAtspiAccessible* accessible,
+                                                 gint* start,
+                                                 gint* end) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  if (!self->flags.is_text_field || self->text_selection_base < 0 ||
+      self->text_selection_base == self->text_selection_extent) {
+    return FALSE;
+  }
+  gint base =
+      fl_atspi_text_utf16_to_offset(self->value, self->text_selection_base);
+  gint extent =
+      fl_atspi_text_utf16_to_offset(self->value, self->text_selection_extent);
+  *start = MIN(base, extent);
+  *end = MAX(base, extent);
+  return TRUE;
+}
+
+static gboolean fl_accessible_node_set_selection(FlAtspiAccessible* accessible,
+                                                 gint start,
+                                                 gint end) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  if (!self->flags.is_text_field ||
+      !has_action(self, kFlutterSemanticsActionSetSelection)) {
+    return FALSE;
+  }
+  g_autoptr(FlValue) selection = fl_value_new_map();
+  fl_value_set_string_take(
+      selection, "base",
+      fl_value_new_int(fl_atspi_text_offset_to_utf16(self->value, start)));
+  fl_value_set_string_take(
+      selection, "extent",
+      fl_value_new_int(fl_atspi_text_offset_to_utf16(self->value, end)));
+  send_action(self, kFlutterSemanticsActionSetSelection, selection);
+  return TRUE;
+}
+
+static gboolean fl_accessible_node_set_text_contents(
+    FlAtspiAccessible* accessible,
+    const gchar* text) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  if (!fl_accessible_node_is_editable_text(accessible) ||
+      !has_action(self, kFlutterSemanticsActionSetText)) {
+    return FALSE;
+  }
+  g_autoptr(FlValue) data = fl_value_new_string(text);
+  send_action(self, kFlutterSemanticsActionSetText, data);
+  return TRUE;
+}
+
+static gboolean fl_accessible_node_do_clipboard_action(
+    FlAtspiAccessible* accessible,
+    FlAtspiClipboardAction action) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  FlutterSemanticsAction semantics_action;
+  switch (action) {
+    case FL_ATSPI_CLIPBOARD_ACTION_COPY:
+      semantics_action = kFlutterSemanticsActionCopy;
+      break;
+    case FL_ATSPI_CLIPBOARD_ACTION_CUT:
+      semantics_action = kFlutterSemanticsActionCut;
+      break;
+    case FL_ATSPI_CLIPBOARD_ACTION_PASTE:
+      semantics_action = kFlutterSemanticsActionPaste;
+      break;
+    default:
+      return FALSE;
+  }
+  if (!has_action(self, semantics_action)) {
+    return FALSE;
+  }
+  send_action(self, semantics_action, nullptr);
+  return TRUE;
+}
+
+static gboolean fl_accessible_node_is_selection_container(
+    FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  for (guint i = 0; i < self->children->len; i++) {
+    FlAccessibleNode* child = get_child_node(self, i);
+    if (child != nullptr && child->flags.is_selected != kFlutterTristateNone) {
+      return TRUE;
     }
   }
+  return FALSE;
 }
 
-// Implements FlAccessibleNode::set_value.
-static void fl_accessible_node_set_value_impl(FlAccessibleNode* self,
-                                              const gchar* value) {}
-
-// Implements FlAccessibleNode::set_text_selection.
-static void fl_accessible_node_set_text_selection_impl(FlAccessibleNode* self,
-                                                       gint base,
-                                                       gint extent) {}
-
-// Implements FlAccessibleNode::set_text_direction.
-static void fl_accessible_node_set_text_direction_impl(
-    FlAccessibleNode* self,
-    FlutterTextDirection direction) {}
-
-// Implements FlAccessibleNode::perform_action.
-static void fl_accessible_node_perform_action_impl(
-    FlAccessibleNode* self,
-    FlutterSemanticsAction action,
-    GBytes* data) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(self);
-  g_autoptr(FlEngine) engine = FL_ENGINE(g_weak_ref_get(&priv->engine));
-  if (engine == nullptr) {
-    return;
+static GArray* fl_accessible_node_get_selected_children(
+    FlAtspiAccessible* accessible) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(accessible);
+  GArray* selected = g_array_new(FALSE, FALSE, sizeof(guint));
+  for (guint i = 0; i < self->children->len; i++) {
+    FlAccessibleNode* child = get_child_node(self, i);
+    if (child != nullptr && child->flags.is_selected == kFlutterTristateTrue) {
+      g_array_append_val(selected, i);
+    }
   }
-  fl_engine_dispatch_semantics_action(engine, priv->view_id, priv->node_id,
-                                      action, data);
+  return selected;
+}
+
+static gboolean fl_accessible_node_select_child(FlAtspiAccessible* accessible,
+                                                gsize index) {
+  FlAccessibleNode* child =
+      get_child_node(FL_ACCESSIBLE_NODE(accessible), index);
+  if (child == nullptr || child->flags.is_selected == kFlutterTristateNone) {
+    return FALSE;
+  }
+  if (child->flags.is_selected == kFlutterTristateTrue) {
+    return TRUE;
+  }
+  // Selectable items, e.g. tabs and chips, are selected by tapping them.
+  if (!has_action(child, kFlutterSemanticsActionTap)) {
+    return FALSE;
+  }
+  send_action(child, kFlutterSemanticsActionTap, nullptr);
+  return TRUE;
+}
+
+static gboolean fl_accessible_node_is_image(FlAtspiAccessible* accessible) {
+  return FL_ACCESSIBLE_NODE(accessible)->flags.is_image;
+}
+
+static void fl_accessible_node_atspi_accessible_iface_init(
+    FlAtspiAccessibleInterface* iface) {
+  iface->get_parent = fl_accessible_node_get_parent;
+  iface->get_n_children = fl_accessible_node_get_n_children;
+  iface->get_child = fl_accessible_node_get_child;
+  iface->get_role = fl_accessible_node_get_role;
+  iface->get_name = fl_accessible_node_get_name;
+  iface->get_description = fl_accessible_node_get_description;
+  iface->get_help_text = fl_accessible_node_get_help_text;
+  iface->get_accessible_id = fl_accessible_node_get_accessible_id;
+  iface->get_states = fl_accessible_node_get_states;
+  iface->get_attributes = fl_accessible_node_get_attributes;
+  iface->get_relations = fl_accessible_node_get_relations;
+  iface->get_extents = fl_accessible_node_get_extents;
+  iface->grab_focus = fl_accessible_node_grab_focus;
+  iface->scroll_to = fl_accessible_node_scroll_to;
+  iface->get_actions = fl_accessible_node_get_actions;
+  iface->do_action = fl_accessible_node_do_action;
+  iface->get_value = fl_accessible_node_get_value;
+  iface->set_value = fl_accessible_node_set_value;
+  iface->has_text = fl_accessible_node_has_text;
+  iface->is_editable_text = fl_accessible_node_is_editable_text;
+  iface->get_text = fl_accessible_node_get_text;
+  iface->get_caret_offset = fl_accessible_node_get_caret_offset;
+  iface->get_selection = fl_accessible_node_get_selection;
+  iface->set_selection = fl_accessible_node_set_selection;
+  iface->set_text_contents = fl_accessible_node_set_text_contents;
+  iface->do_clipboard_action = fl_accessible_node_do_clipboard_action;
+  iface->is_selection_container = fl_accessible_node_is_selection_container;
+  iface->get_selected_children = fl_accessible_node_get_selected_children;
+  iface->select_child = fl_accessible_node_select_child;
+  iface->is_image = fl_accessible_node_is_image;
+}
+
+static void fl_accessible_node_finalize(GObject* object) {
+  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(object);
+
+  g_free(self->label);
+  g_free(self->hint);
+  g_free(self->value);
+  g_free(self->tooltip);
+  g_free(self->identifier);
+  g_array_unref(self->children);
+  g_array_unref(self->custom_actions);
+
+  G_OBJECT_CLASS(fl_accessible_node_parent_class)->finalize(object);
 }
 
 static void fl_accessible_node_class_init(FlAccessibleNodeClass* klass) {
-  G_OBJECT_CLASS(klass)->set_property = fl_accessible_node_set_property;
-  G_OBJECT_CLASS(klass)->dispose = fl_accessible_node_dispose;
-  ATK_OBJECT_CLASS(klass)->get_name = fl_accessible_node_get_name;
-  ATK_OBJECT_CLASS(klass)->get_parent = fl_accessible_node_get_parent;
-  ATK_OBJECT_CLASS(klass)->get_index_in_parent =
-      fl_accessible_node_get_index_in_parent;
-  ATK_OBJECT_CLASS(klass)->get_n_children = fl_accessible_node_get_n_children;
-  ATK_OBJECT_CLASS(klass)->ref_child = fl_accessible_node_ref_child;
-  ATK_OBJECT_CLASS(klass)->get_role = fl_accessible_node_get_role;
-  ATK_OBJECT_CLASS(klass)->ref_state_set = fl_accessible_node_ref_state_set;
-  FL_ACCESSIBLE_NODE_CLASS(klass)->set_name = fl_accessible_node_set_name_impl;
-  FL_ACCESSIBLE_NODE_CLASS(klass)->set_extents =
-      fl_accessible_node_set_extents_impl;
-  FL_ACCESSIBLE_NODE_CLASS(klass)->set_flags =
-      fl_accessible_node_set_flags_impl;
-  FL_ACCESSIBLE_NODE_CLASS(klass)->set_actions =
-      fl_accessible_node_set_actions_impl;
-  FL_ACCESSIBLE_NODE_CLASS(klass)->set_value =
-      fl_accessible_node_set_value_impl;
-  FL_ACCESSIBLE_NODE_CLASS(klass)->set_text_selection =
-      fl_accessible_node_set_text_selection_impl;
-  FL_ACCESSIBLE_NODE_CLASS(klass)->set_text_direction =
-      fl_accessible_node_set_text_direction_impl;
-  FL_ACCESSIBLE_NODE_CLASS(klass)->perform_action =
-      fl_accessible_node_perform_action_impl;
-
-  g_object_class_install_property(
-      G_OBJECT_CLASS(klass), PROP_ENGINE,
-      g_param_spec_object(
-          "engine", "engine", "Flutter engine", fl_engine_get_type(),
-          static_cast<GParamFlags>(G_PARAM_WRITABLE | G_PARAM_CONSTRUCT_ONLY |
-                                   G_PARAM_STATIC_STRINGS)));
-  g_object_class_install_property(
-      G_OBJECT_CLASS(klass), PROP_VIEW_ID,
-      g_param_spec_int64(
-          "view-id", "view-id", "View ID that this node belongs to", 0,
-          G_MAXINT64, 0,
-          static_cast<GParamFlags>(G_PARAM_WRITABLE | G_PARAM_CONSTRUCT_ONLY)));
-  g_object_class_install_property(
-      G_OBJECT_CLASS(klass), PROP_ID,
-      g_param_spec_int(
-          "node-id", "node-id", "Accessibility node ID", 0, G_MAXINT, 0,
-          static_cast<GParamFlags>(G_PARAM_WRITABLE | G_PARAM_CONSTRUCT_ONLY |
-                                   G_PARAM_STATIC_STRINGS)));
-}
-
-static void fl_accessible_node_component_interface_init(
-    AtkComponentIface* iface) {
-  iface->get_extents = fl_accessible_node_get_extents;
-  iface->get_layer = fl_accessible_node_get_layer;
-}
-
-static void fl_accessible_node_action_interface_init(AtkActionIface* iface) {
-  iface->do_action = fl_accessible_node_do_action;
-  iface->get_n_actions = fl_accessible_node_get_n_actions;
-  iface->get_name = fl_accessible_node_get_name;
-}
-
-// Returns the number of UTF-8 characters in this node's text content. A
-// Flutter semantics node's text content is its accessibility name.
-static gint fl_accessible_node_get_text_length(FlAccessibleNodePrivate* priv) {
-  return priv->name != nullptr
-             ? static_cast<gint>(g_utf8_strlen(priv->name, -1))
-             : 0;
-}
-
-// Implements AtkText::get_character_count.
-static gint fl_accessible_node_get_character_count(AtkText* text) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(text);
-  return fl_accessible_node_get_text_length(priv);
-}
-
-// Implements AtkText::get_text.
-static gchar* fl_accessible_node_get_text(AtkText* text,
-                                          gint start_offset,
-                                          gint end_offset) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(text);
-  if (priv->name == nullptr) {
-    return g_strdup("");
-  }
-
-  gint count = fl_accessible_node_get_text_length(priv);
-  start_offset = CLAMP(start_offset, 0, count);
-  if (end_offset < 0) {
-    end_offset = count;
-  }
-  end_offset = CLAMP(end_offset, start_offset, count);
-
-  return g_utf8_substring(priv->name, start_offset, end_offset);
-}
-
-// Implements AtkText::get_character_at_offset.
-static gunichar fl_accessible_node_get_character_at_offset(AtkText* text,
-                                                           gint offset) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(text);
-  if (priv->name == nullptr || offset < 0 ||
-      offset >= fl_accessible_node_get_text_length(priv)) {
-    return 0;
-  }
-
-  return g_utf8_get_char(g_utf8_offset_to_pointer(priv->name, offset));
-}
-
-// Implements AtkText::get_caret_offset.
-// Static text such as a heading has no caret.
-static gint fl_accessible_node_get_caret_offset(AtkText* text) {
-  (void)text;
-  return -1;
-}
-
-// Implements AtkText::get_n_selections.
-// Static text such as a heading cannot be selected, so report no selections.
-static gint fl_accessible_node_get_n_selections(AtkText* text) {
-  (void)text;
-  return 0;
-}
-
-// Implements AtkText::get_selection.
-static gchar* fl_accessible_node_get_selection(AtkText* text,
-                                               gint selection_num,
-                                               gint* start_offset,
-                                               gint* end_offset) {
-  (void)text;
-  (void)selection_num;
-  if (start_offset != nullptr) {
-    *start_offset = 0;
-  }
-  if (end_offset != nullptr) {
-    *end_offset = 0;
-  }
-  return nullptr;
-}
-
-// Implements AtkText::get_string_at_offset.
-static gchar* fl_accessible_node_get_string_at_offset(
-    AtkText* text,
-    gint offset,
-    AtkTextGranularity granularity,
-    gint* start_offset,
-    gint* end_offset) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(text);
-  gint count = fl_accessible_node_get_text_length(priv);
-  if (offset < 0 || offset >= count) {
-    if (start_offset != nullptr) {
-      *start_offset = 0;
-    }
-    if (end_offset != nullptr) {
-      *end_offset = 0;
-    }
-    return nullptr;
-  }
-
-  switch (granularity) {
-    case ATK_TEXT_GRANULARITY_CHAR:
-      if (start_offset != nullptr) {
-        *start_offset = offset;
-      }
-      if (end_offset != nullptr) {
-        *end_offset = offset + 1;
-      }
-      return g_utf8_substring(priv->name, offset, offset + 1);
-    case ATK_TEXT_GRANULARITY_WORD:
-    case ATK_TEXT_GRANULARITY_SENTENCE:
-    case ATK_TEXT_GRANULARITY_LINE:
-    case ATK_TEXT_GRANULARITY_PARAGRAPH:
-      if (start_offset != nullptr) {
-        *start_offset = 0;
-      }
-      if (end_offset != nullptr) {
-        *end_offset = count;
-      }
-      return g_strdup(priv->name != nullptr ? priv->name : "");
-    default:
-      return nullptr;
-  }
-}
-
-// Implements AtkText::get_text_at_offset (deprecated, but still used by some
-// ATK clients to read the text content of non-editable objects such as
-// headings).
-static gchar* fl_accessible_node_get_text_at_offset(
-    AtkText* text,
-    gint offset,
-    AtkTextBoundary boundary_type,
-    gint* start_offset,
-    gint* end_offset) {
-  switch (boundary_type) {
-    case ATK_TEXT_BOUNDARY_CHAR:
-      return fl_accessible_node_get_string_at_offset(
-          text, offset, ATK_TEXT_GRANULARITY_CHAR, start_offset, end_offset);
-    case ATK_TEXT_BOUNDARY_WORD_START:
-    case ATK_TEXT_BOUNDARY_WORD_END:
-      return fl_accessible_node_get_string_at_offset(
-          text, offset, ATK_TEXT_GRANULARITY_WORD, start_offset, end_offset);
-    case ATK_TEXT_BOUNDARY_SENTENCE_START:
-    case ATK_TEXT_BOUNDARY_SENTENCE_END:
-      return fl_accessible_node_get_string_at_offset(
-          text, offset, ATK_TEXT_GRANULARITY_SENTENCE, start_offset,
-          end_offset);
-    case ATK_TEXT_BOUNDARY_LINE_START:
-    case ATK_TEXT_BOUNDARY_LINE_END:
-      return fl_accessible_node_get_string_at_offset(
-          text, offset, ATK_TEXT_GRANULARITY_LINE, start_offset, end_offset);
-    default:
-      return nullptr;
-  }
-}
-
-static void fl_accessible_node_text_interface_init(AtkTextIface* iface) {
-  iface->get_character_count = fl_accessible_node_get_character_count;
-  iface->get_text = fl_accessible_node_get_text;
-  iface->get_character_at_offset = fl_accessible_node_get_character_at_offset;
-  iface->get_caret_offset = fl_accessible_node_get_caret_offset;
-  iface->get_n_selections = fl_accessible_node_get_n_selections;
-  iface->get_selection = fl_accessible_node_get_selection;
-  iface->get_text_at_offset = fl_accessible_node_get_text_at_offset;
-  iface->get_string_at_offset = fl_accessible_node_get_string_at_offset;
+  G_OBJECT_CLASS(klass)->finalize = fl_accessible_node_finalize;
 }
 
 static void fl_accessible_node_init(FlAccessibleNode* self) {
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(self);
-  g_weak_ref_init(&priv->engine, nullptr);
-  g_weak_ref_init(&priv->parent, nullptr);
-  priv->actions = g_ptr_array_new();
-  priv->children = g_ptr_array_new_with_free_func(g_object_unref);
+  self->flags.struct_size = sizeof(self->flags);
+  self->label = g_strdup("");
+  self->hint = g_strdup("");
+  self->value = g_strdup("");
+  self->tooltip = g_strdup("");
+  self->identifier = g_strdup("");
+  self->text_selection_base = -1;
+  self->text_selection_extent = -1;
+  self->children = g_array_new(FALSE, FALSE, sizeof(int32_t));
+  self->custom_actions = g_array_new(FALSE, FALSE, sizeof(int32_t));
 }
 
-FlAccessibleNode* fl_accessible_node_new(FlEngine* engine,
-                                         FlutterViewId view_id,
-                                         int32_t node_id) {
-  FlAccessibleNode* self = FL_ACCESSIBLE_NODE(
-      g_object_new(fl_accessible_node_get_type(), "engine", engine, "view-id",
-                   view_id, "node-id", node_id, nullptr));
+FlAccessibleNode* fl_accessible_node_new(FlViewAccessible* view, int32_t id) {
+  FlAccessibleNode* self =
+      FL_ACCESSIBLE_NODE(g_object_new(fl_accessible_node_get_type(), nullptr));
+  self->view = view;
+  self->id = id;
   return self;
 }
 
-void fl_accessible_node_set_parent(FlAccessibleNode* self,
-                                   AtkObject* parent,
-                                   gint index) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(self);
-  g_weak_ref_set(&priv->parent, parent);
-  priv->index = index;
+int32_t fl_accessible_node_get_id(FlAccessibleNode* self) {
+  g_return_val_if_fail(FL_IS_ACCESSIBLE_NODE(self), -1);
+  return self->id;
 }
 
-void fl_accessible_node_set_children(FlAccessibleNode* self,
-                                     GPtrArray* children) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-  FlAccessibleNodePrivate* priv = FL_ACCESSIBLE_NODE_GET_PRIVATE(self);
+static void set_string(gchar** field, const gchar* value) {
+  g_free(*field);
+  *field = g_strdup(value != nullptr ? value : "");
+}
 
-  // Remove nodes that are no longer required.
-  for (guint i = 0; i < priv->children->len;) {
-    AtkObject* object = ATK_OBJECT(g_ptr_array_index(priv->children, i));
-    if (has_child(children, object)) {
-      i++;
-    } else {
-      g_signal_emit_by_name(self, "children-changed::remove", i, object,
-                            nullptr);
-      g_ptr_array_remove_index(priv->children, i);
-    }
+void fl_accessible_node_update(FlAccessibleNode* self,
+                               const FlutterSemanticsNode2* semantics) {
+  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
+
+  if (semantics->flags2 != nullptr) {
+    self->flags = *semantics->flags2;
+  } else {
+    self->flags = {};
+    self->flags.struct_size = sizeof(self->flags);
   }
+  self->actions = semantics->actions;
+  set_string(&self->label, semantics->label);
+  set_string(&self->hint, semantics->hint);
+  set_string(&self->value, semantics->value);
+  set_string(&self->tooltip, semantics->tooltip);
+  set_string(&self->identifier, semantics->identifier);
+  self->text_selection_base = semantics->text_selection_base;
+  self->text_selection_extent = semantics->text_selection_extent;
+  self->rect = semantics->rect;
+  self->transform = semantics->transform;
+  g_array_set_size(self->children, 0);
+  g_array_append_vals(self->children, semantics->children_in_traversal_order,
+                      semantics->child_count);
+  g_array_set_size(self->custom_actions, 0);
+  g_array_append_vals(self->custom_actions,
+                      semantics->custom_accessibility_actions,
+                      semantics->custom_accessibility_actions_count);
+  self->heading_level = semantics->heading_level;
+}
 
-  // Add new nodes.
-  for (guint i = 0; i < children->len; i++) {
-    AtkObject* object = ATK_OBJECT(g_ptr_array_index(children, i));
-    if (!has_child(priv->children, object)) {
-      g_ptr_array_add(priv->children, g_object_ref(object));
-      g_signal_emit_by_name(self, "children-changed::add", i, object, nullptr);
-    }
+GArray* fl_accessible_node_get_child_ids(FlAccessibleNode* self) {
+  g_return_val_if_fail(FL_IS_ACCESSIBLE_NODE(self), nullptr);
+  return self->children;
+}
+
+FlAccessibleNode* fl_accessible_node_get_parent_node(FlAccessibleNode* self) {
+  g_return_val_if_fail(FL_IS_ACCESSIBLE_NODE(self), nullptr);
+  return self->parent;
+}
+
+void fl_accessible_node_set_parent_node(FlAccessibleNode* self,
+                                        FlAccessibleNode* parent) {
+  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
+  self->parent = parent;
+}
+
+gboolean fl_accessible_node_is_focused(FlAccessibleNode* self) {
+  g_return_val_if_fail(FL_IS_ACCESSIBLE_NODE(self), FALSE);
+  return self->flags.is_focused == kFlutterTristateTrue;
+}
+
+gboolean fl_accessible_node_is_live_region(FlAccessibleNode* self) {
+  g_return_val_if_fail(FL_IS_ACCESSIBLE_NODE(self), FALSE);
+  return self->flags.is_live_region;
+}
+
+void fl_accessible_node_continue_set_value(FlAccessibleNode* self,
+                                           FlAtspiValue* old_value) {
+  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
+
+  if (!self->has_target_value) {
+    return;
   }
-}
-
-void fl_accessible_node_set_name(FlAccessibleNode* self, const gchar* name) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-
-  return FL_ACCESSIBLE_NODE_GET_CLASS(self)->set_name(self, name);
-}
-
-void fl_accessible_node_set_extents(FlAccessibleNode* self,
-                                    gint x,
-                                    gint y,
-                                    gint width,
-                                    gint height) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-
-  return FL_ACCESSIBLE_NODE_GET_CLASS(self)->set_extents(self, x, y, width,
-                                                         height);
-}
-
-void fl_accessible_node_set_flags(FlAccessibleNode* self,
-                                  FlutterSemanticsFlags* flags) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-
-  return FL_ACCESSIBLE_NODE_GET_CLASS(self)->set_flags(self, flags);
-}
-
-void fl_accessible_node_set_actions(FlAccessibleNode* self,
-                                    FlutterSemanticsAction actions) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-
-  return FL_ACCESSIBLE_NODE_GET_CLASS(self)->set_actions(self, actions);
-}
-
-void fl_accessible_node_set_value(FlAccessibleNode* self, const gchar* value) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-
-  return FL_ACCESSIBLE_NODE_GET_CLASS(self)->set_value(self, value);
-}
-
-void fl_accessible_node_set_text_selection(FlAccessibleNode* self,
-                                           gint base,
-                                           gint extent) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-
-  return FL_ACCESSIBLE_NODE_GET_CLASS(self)->set_text_selection(self, base,
-                                                                extent);
-}
-
-void fl_accessible_node_set_text_direction(FlAccessibleNode* self,
-                                           FlutterTextDirection direction) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-
-  return FL_ACCESSIBLE_NODE_GET_CLASS(self)->set_text_direction(self,
-                                                                direction);
-}
-
-void fl_accessible_node_perform_action(FlAccessibleNode* self,
-                                       FlutterSemanticsAction action,
-                                       GBytes* data) {
-  g_return_if_fail(FL_IS_ACCESSIBLE_NODE(self));
-
-  return FL_ACCESSIBLE_NODE_GET_CLASS(self)->perform_action(self, action, data);
+  g_autoptr(FlAtspiValue) current =
+      fl_accessible_node_get_value(FL_ATSPI_ACCESSIBLE(self));
+  // Stop if the value didn't move, e.g. at a limit.
+  if (current == nullptr || old_value == nullptr ||
+      current->current == old_value->current || --self->remaining_steps <= 0) {
+    self->has_target_value = FALSE;
+    return;
+  }
+  gboolean increasing = current->current > old_value->current;
+  if (increasing ? current->current >= self->target_value
+                 : current->current <= self->target_value) {
+    self->has_target_value = FALSE;
+    return;
+  }
+  FlutterSemanticsAction action = increasing ? kFlutterSemanticsActionIncrease
+                                             : kFlutterSemanticsActionDecrease;
+  if (!has_action(self, action)) {
+    self->has_target_value = FALSE;
+    return;
+  }
+  send_action(self, action, nullptr);
 }

@@ -8,6 +8,7 @@
 #include <glib-object.h>
 
 #include "flutter/shell/platform/embedder/embedder.h"
+#include "flutter/shell/platform/linux/fl_atspi_application.h"
 #include "flutter/shell/platform/linux/fl_display_monitor.h"
 #include "flutter/shell/platform/linux/fl_keyboard_manager.h"
 #include "flutter/shell/platform/linux/fl_mouse_cursor_handler.h"
@@ -622,6 +623,17 @@ void fl_engine_update_accessibility_features(FlEngine* engine, int32_t flags);
  * Request the application exits.
  */
 void fl_engine_request_app_exit(FlEngine* engine);
+
+/**
+ * fl_engine_get_atspi_application:
+ * @engine: an #FlEngine.
+ *
+ * Gets the AT-SPI application used to expose this engine's views to assistive
+ * technologies.
+ *
+ * Returns: an #FlAtspiApplication.
+ */
+FlAtspiApplication* fl_engine_get_atspi_application(FlEngine* engine);
 
 /**
  * fl_engine_get_keyboard_manager:

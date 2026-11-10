@@ -4,14 +4,12 @@
 
 #include "flutter/shell/platform/linux/public/flutter_linux/fl_view.h"
 
-#include <atk/atk.h>
 #include <gdk/gdkwayland.h>
 #include <gtk/gtk-a11y.h>
 
 #include <cstring>
 
 #include "flutter/common/constants.h"
-#include "flutter/shell/platform/linux/fl_accessible_node.h"
 #include "flutter/shell/platform/linux/fl_engine_private.h"
 #include "flutter/shell/platform/linux/fl_key_event.h"
 #include "flutter/shell/platform/linux/fl_opengl_manager.h"
@@ -63,7 +61,7 @@ struct _FlView {
   // Manages touch events.
   FlTouchManager* touch_manager;
 
-  // Accessible tree from Flutter, exposed as an AtkPlug.
+  // Accessible tree from Flutter, exposed over AT-SPI.
   FlViewAccessible* view_accessible;
 
   // TRUE if the view size should be controlled by Flutter.
@@ -678,10 +676,10 @@ static void fl_view_class_init(FlViewClass* klass) {
 
 // Engine related construction.
 static void setup_engine(FlView* self) {
-  self->view_accessible = fl_view_accessible_new(self->engine, self->view_id);
-  fl_socket_accessible_embed(
-      FL_SOCKET_ACCESSIBLE(gtk_widget_get_accessible(GTK_WIDGET(self))),
-      atk_plug_get_id(ATK_PLUG(self->view_accessible)));
+  self->view_accessible = fl_view_accessible_new(
+      self->engine, fl_engine_get_atspi_application(self->engine),
+      self->view_id);
+  fl_view_accessible_embed(self->view_accessible, GTK_WIDGET(self));
 
   self->pointer_manager = fl_pointer_manager_new(self->view_id, self->engine);
 

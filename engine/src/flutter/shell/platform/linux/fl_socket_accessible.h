@@ -15,8 +15,6 @@ G_DECLARE_FINAL_TYPE(FlSocketAccessible,
                      SOCKET_ACCESSIBLE,
                      GtkContainerAccessible);
 
-void fl_socket_accessible_embed(FlSocketAccessible* self, gchar* id);
-
 G_END_DECLS
 
 #endif  // FLUTTER_SHELL_PLATFORM_LINUX_FL_SOCKET_ACCESSIBLE_H_
